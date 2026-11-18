@@ -175,11 +175,13 @@ def check_guest(log, name, wall_before, wall_after):
 
 def check_trace(log, expected_native):
     begin, end, summary, actual_native = {}, {}, None, set()
+    trace_digest = hashlib.sha256()
     protocol_fields = {"schema_version", "call_id", "phase", "api_id", "route", "reason",
                        "guest_thread", "guest_pc", "outcome", "guest_result", "host_error", "duration_ns"}
     for line in log.read_text(encoding="utf-8", errors="replace").splitlines():
         if not line.startswith('{"schema_version":'):
             continue
+        trace_digest.update((line.rstrip() + "\n").encode("utf-8"))
         record = json.loads(line)
         if record["schema_version"] != 1 or summary is not None:
             raise ValueError(f"Unexpected trace record in {log}")
@@ -215,6 +217,7 @@ def check_trace(log, expected_native):
     if any("one.txt" in json.dumps(r) or "hello" in json.dumps(r) for r in end.values()):
         raise ValueError(f"Guest file data leaked into {log}")
     return end, {"calls": len(end), "native_apis": sorted(actual_native),
+                 "trace_records_sha256": trace_digest.hexdigest(),
                  "api_calls": dict(sorted(Counter(r["api_id"] for r in end.values()).items()))}
 
 
@@ -321,6 +324,7 @@ def guest_contract(args, out, env):
         "seed": FIXTURE_SEED,
         "host": platform.platform(),
         "target": args.target,
+        "backend": "headless",
         "cc": subprocess.check_output([args.cc, "--version"], text=True).splitlines()[0],
         "assembler_command": assembler_command,
         "runtime_command": build_cmd,
@@ -334,6 +338,8 @@ def guest_contract(args, out, env):
         "initial_files": initial_files,
         "run_results": {},
     }
+    if args.runtime_commit:
+        manifest["runtime_commit"] = args.runtime_commit
     if not args.compile_only:
         native_env = dict.fromkeys(
             ["SWR_NATIVE_HOS", "SWR_NATIVE_TIME", "SWR_NATIVE_FS", "SWR_NATIVE_THREAD", "SWR_NATIVE_SYNC"], "1")
@@ -385,11 +391,21 @@ def main():
     parser.add_argument("--cc", default=os.environ.get("CC", "gcc"))
     parser.add_argument("--assembler", default="clang" if os.name == "nt" else "aarch64-linux-gnu-as")
     parser.add_argument("--runtime", type=Path, help="path to the current target's headless Runtime")
+    parser.add_argument("--runtime-commit", help="Git revision used to build the supplied Runtime")
     parser.add_argument("--sanitize", action="store_true", help="enable Linux ASan and UBSan in host tests")
     parser.add_argument("--compile-only", action="store_true", help="prepare the target binaries without running them")
     args = parser.parse_args()
     if args.sanitize and args.target != "linux":
         parser.error("--sanitize requires the Linux target")
+    if args.runtime_commit:
+        if not args.runtime:
+            parser.error("--runtime-commit requires --runtime")
+        revision = subprocess.run(
+            ["git", "-c", f"safe.directory={ROOT.as_posix()}", "rev-parse", "--verify", "--end-of-options",
+             f"{args.runtime_commit}^{{commit}}"], cwd=ROOT, text=True, capture_output=True)
+        if revision.returncode:
+            parser.error("--runtime-commit must resolve to a local Git commit")
+        args.runtime_commit = revision.stdout.strip()
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=False)
     env = clean_env() | {"SWR_NO_SNXVK": "1"}

@@ -14,6 +14,9 @@ results and host errors. See tests/nha/README.md for scopes and verification.
 The NHA contracts compare the same ABI 1 fixture across baseline, Legacy,
 Native and mixed routing. Host tests verify injected failures, guest results,
 trace records, and resource cleanup.
+The NHA interface inventory and tests/nha/report.py correlate fixture traces
+with static dependencies, report missing evidence, and list candidates for
+review in narrowly scoped Runtime builds.
 
 VULKAN RENDERER (TEST)
 F1 has a new Renderer row: OpenGL or Vulkan. Changing it saves renderer= in the game's .ini and

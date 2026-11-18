@@ -41,3 +41,13 @@ python switchrecomp.py --build-runtime --target win64 --backend headless --cc gc
 只运行宿主契约测试时可省略 `--runtime`。仅交叉编译时可加 `--compile-only` 并指定 `--target win64 --cc x86_64-w64-mingw32-gcc`。Linux 的 `test_fs` 在 root 下会将实际权限拒绝记录为跳过，ASan/UBSan 运行仍会验证注入的拒绝访问和文件资源寿命。原生 Windows 应从本地 NTFS 运行，临时目录也应位于本地 NTFS，以便测量实际目录联接、分享冲突及进程句柄计数。
 
 每个已接入接口的期望、源码和测试索引见 [Phase 2 接口契约](CONTRACTS.md)。
+
+## 接口依赖报告
+
+```sh
+python3 tests/nha/test_report.py
+python3 tests/nha/report.py --manifest bin/nha-phase2-linux/fixture-manifest.json \
+  --output bin/nha-phase2-linux/report.json
+```
+
+生成样本清单时可用 `--runtime-commit` 保存实测 Runtime 的源码修订。报告对照版本化接口清单与各路 trace，输出调用、静态及实测关系、路由依赖和证据缺口。字段说明及实测结果见 [Phase 3 报告](../../docs/nha/README.md)。
