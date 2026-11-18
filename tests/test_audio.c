@@ -3,7 +3,7 @@
 #include <math.h>
 #include <pthread.h>
 u8* g_mem;int g_verbose=0;
-void logf_(int l,const char* f,...){(void)l;va_list a;va_start(a,f);vfprintf(stderr,f,a);va_end(a);}
+int logf_(int l,const char* f,...){(void)l;va_list a;va_start(a,f);int n=vfprintf(stderr,f,a);va_end(a);return n<0;}
 void pm_init(PMutex* m){pthread_mutex_init(&m->l,NULL);}void pm_lock(PMutex* m){pthread_mutex_lock(&m->l);}void pm_unlock(PMutex* m){pthread_mutex_unlock(&m->l);}
 typedef struct{PThreadFn fn;void* arg;}TArg;static void* tstart(void* p){TArg t=*(TArg*)p;free(p);t.fn(t.arg);return NULL;}
 int plat_thread(PThreadFn fn,void* arg,size_t stack){(void)stack;pthread_t th;TArg* t=malloc(sizeof *t);t->fn=fn;t->arg=arg;if(pthread_create(&th,NULL,tstart,t)){free(t);return -1;}pthread_detach(th);return 0;}

@@ -3,7 +3,8 @@
    Forks and derived works have to keep the credit to SwitchRecomp by MZ Labs and the startup screen. */
 /* fs: RomFS (built on the fly from an extracted romfs/ folder, or a romfs.bin), plus save data and SD card mapped
    to normal folders */
-#include "rt.h"
+#include "native_hos.h"
+#include <errno.h>
 #include <ctype.h>
 
 #define FS_NOTFOUND RC(2,1)
@@ -173,7 +174,7 @@ static int romstorage(SvcObj* o, IpcCtx* c){
 /* ============================================================ PC folders as IFileSystem */
 typedef struct { char root[1024]; } FsData;
 
-typedef struct { FILE* f; char path[1100]; u32 mode; } FileData;
+typedef struct { FILE* f; char path[1100]; u32 mode; PFile native_file; } FileData;
 
 typedef struct { PDir d; int ok; u32 filter; char path[1100]; int done; } DirData;
 
@@ -207,6 +208,12 @@ static void copy_tree(const char* src, const char* dst){
     fclose(fi); fclose(fo); }
   plat_dir_close(&d); }
 
+static int file_range_reply(IpcCtx* c){
+  const u8 info[0x40]={0};
+  outbytes(c,info,sizeof info);
+  return 0;
+}
+
 static int file_disp(SvcObj* o, IpcCtx* c){
   FileData* f=o->data;
   switch(c->cmd){
@@ -224,7 +231,86 @@ static int file_disp(SvcObj* o, IpcCtx* c){
   }
   return stub_ok(o,c); }
 
-static void file_destroy(SvcObj* o){ FileData* f=o->data; if(f->f) fclose(f->f); }
+static u32 native_file_result(int rc){
+  switch(rc){
+    case PFILE_OK: return 0;
+    case PFILE_MISSING: return FS_NOTFOUND;
+    case PFILE_DENIED: return RC(2,6400);
+    case PFILE_UNSUPPORTED: return RC(2,6300);
+    case PFILE_INVALID: return RC(2,6001);
+    default: return RC(2,5000);
+  }
+}
+
+static void file_destroy(SvcObj* o){
+  FileData* f=o->data;
+  NhaCall call;
+  nha_begin_file_close(&call,o,kthread_cur());
+  u32 rc=0;
+  if(o->nha_kind==NHA_NATIVE_FILE)
+    rc=native_file_result(plat_file_close(&f->native_file,&call.host_error));
+  else if(f->f && fclose(f->f)){
+    call.host_error=(PError){PERR_ERRNO,(u32)errno};
+    rc=RC(2,5000);
+  }
+  nha_end_file_close(&call,rc);
+}
+
+static int native_file_other(SvcObj* o, IpcCtx* c){
+  (void)o;
+  if(c->cmd==2) return 0;  /* nothing to flush on a read-only handle */
+  if(c->cmd==1 || c->cmd==3) return RC(2,6200);
+  if(c->cmd==5) return file_range_reply(c);
+  return RC(2,6300);
+}
+
+int nha_fs_open(SvcObj* o, IpcCtx* c, NhaCall* call){
+  if(c->request_size<4) return RC(2,6001);
+  u64 addr,size;
+  if(!buf_xs(c,0,&addr,&size) || !addr) buf_in(c,0,&addr,&size);
+  char path[0x301];
+  if(size>sizeof path) size=sizeof path;
+  if(!size || !mem_access_begin(addr,size,PERM_R)) return RC(2,6002);
+  memcpy(path,GP(addr),(size_t)size);
+  mem_access_end();
+  if(!memchr(path,0,(size_t)size)) return RC(2,6002);
+  for(char* p=path;*p;p++) if(*p=='\\') *p='/';
+  char* relative=path;
+  while(*relative=='/') relative++;
+  SvcObj* obj=svcobj_new("IFile",native_file_other,sizeof(FileData));
+  if(!obj) return RC(2,3200);
+  FileData* file=obj->data;
+  FsData* fs=o->data;
+  int rc=plat_file_open_read(&file->native_file,fs->root,relative,&call->host_error);
+  if(rc!=PFILE_OK){ svcobj_unref(obj); return native_file_result(rc); }
+  obj->nha_kind=NHA_NATIVE_FILE;
+  obj->destroy=file_destroy;
+  out_obj(c,obj);
+  return 0;
+}
+
+int nha_fs_read(SvcObj* o, IpcCtx* c, NhaCall* call){
+  if(c->request_size<24) return RC(2,6001);
+  u64 offset=in64(c,8), size=in64(c,16), addr, capacity, count=0;
+  if(offset>INT64_MAX) return RC(2,6061);
+  if(size>INT64_MAX-offset) return RC(2,3005);
+  buf_out(c,0,&addr,&capacity);
+  if(!size){ out64(c,0); return 0; }
+  if(size>capacity || !mem_access_begin(addr,size,PERM_W)) return RC(2,6001);
+  FileData* file=o->data;
+  int rc=plat_file_read_at(&file->native_file,GP(addr),size,offset,&count,&call->host_error);
+  mem_access_end();
+  if(rc==PFILE_OK) out64(c,count);
+  return native_file_result(rc);
+}
+
+int nha_fs_size(SvcObj* o, IpcCtx* c, NhaCall* call){
+  FileData* file=o->data;
+  u64 size;
+  int rc=plat_file_size64(&file->native_file,&size,&call->host_error);
+  if(rc==PFILE_OK) out64(c,size);
+  return native_file_result(rc);
+}
 
 static int dir_disp(SvcObj* o, IpcCtx* c){
   DirData* d=o->data;
@@ -263,7 +349,9 @@ static int fs_disp(SvcObj* o, IpcCtx* c){
       FILE* t=fopen(hp,"rb"); if(!t){ fs_miss("GetEntryType",p); return FS_NOTFOUND; } fclose(t); out32(c,1); return 0; }
     case 8: { read_path(c,0,p,sizeof p); host_path(fs,p,hp,sizeof hp); u32 mode=in32(c,0);
       FILE* t=fopen(hp,(mode&2)? "rb+" : "rb"); if(!t){ fs_miss("OpenFile",p); return FS_NOTFOUND; }
-      SvcObj* f=svcobj_new("IFile",file_disp,sizeof(FileData)); FileData* fd=f->data; fd->f=t; fd->mode=mode; strcpy(fd->path,hp); f->destroy=file_destroy;
+      SvcObj* f=svcobj_new("IFile",file_disp,sizeof(FileData));
+      if(!f){ fclose(t); return RC(2,3200); }
+      FileData* fd=f->data; fd->f=t; fd->mode=mode; strcpy(fd->path,hp); f->destroy=file_destroy; f->nha_kind=NHA_FILE;
       out_obj(c,f); return 0; }
     case 9: { read_path(c,0,p,sizeof p); host_path(fs,p,hp,sizeof hp);
       if(!plat_is_dir(hp)){ fs_miss("OpenDirectory",p); return FS_NOTFOUND; }
@@ -279,9 +367,9 @@ static int fs_disp(SvcObj* o, IpcCtx* c){
   return stub_ok(o,c); }
 
 SvcObj* hostfs_new(const char* root){
-  SvcObj* o=svcobj_new("IFileSystem",fs_disp,sizeof(FsData)); FsData* d=o->data; strncpy(d->root,root,1023);
+  SvcObj* o=svcobj_new("IFileSystem",fs_disp,sizeof(FsData)); if(!o) return NULL; FsData* d=o->data; strncpy(d->root,root,1023);
   size_t l=strlen(d->root); while(l && (d->root[l-1]=='/'||d->root[l-1]=='\\')) d->root[--l]=0;
-  mkdirs(d->root); return o; }
+  mkdirs(d->root); o->nha_kind=NHA_LEGACY_FS; return o; }
 
 #if defined(_WIN32)
 void rm_rf(const char* p, int keep){ PDir d; if(!plat_dir_open(&d,p)){ while(plat_dir_next(&d)){ char q[1600]; snprintf(q,sizeof q,"%s/%s",p,d.name); if(d.is_dir) rm_rf(q,0); else remove(q); } plat_dir_close(&d); } if(!keep) RemoveDirectoryA(p); }
@@ -375,7 +463,14 @@ static int fsp_disp(SvcObj* o, IpcCtx* c){
   char p[1200];
   switch(c->cmd){
     case 1: return 0;
-    case 18: snprintf(p,sizeof p,"%ssdmc",g_datadir); out_obj(c,hostfs_new(p)); return 0;
+    case 18: {
+      snprintf(p,sizeof p,"%ssdmc",g_datadir);
+      SvcObj* fs=hostfs_new(p);
+      if(!fs) return RC(2,3200);
+      if(strlen(p)<sizeof ((FsData*)fs->data)->root) fs->nha_kind=NHA_FS;
+      out_obj(c,fs);
+      return 0;
+    }
     case 51: case 52: case 53: {
       /* in: u8 space, pad[7], then attr = { u64 program_id, uid[16], u64 system_save_id, u8 type, u8 rank, u16 index } */
       u8 type=in8(c,8+0x20);
@@ -386,7 +481,9 @@ static int fsp_disp(SvcObj* o, IpcCtx* c){
          so the first time an account or device save opens I start it from a copy of that folder */
       if((type==1 || type==3) && !plat_is_dir(p)){ char old[1200]; snprintf(old,sizeof old,"%ssave/system",g_datadir);
         if(plat_is_dir(old)){ LOG("fs: copying %s to %s (save folders are now separated by type)\n",old,p); copy_tree(old,p); } }
-      out_obj(c,hostfs_new(p)); return 0; }
+      SvcObj* fs=hostfs_new(p);
+      if(!fs) return RC(2,3200);
+      out_obj(c,fs); return 0; }
     case 22: case 23: case 25: case 26: case 27: case 28: case 32: case 33: case 34: case 35: case 36: case 37: return 0;
     case 60: case 61: case 62: out_obj(c,svcobj_new("ISaveDataInfoReader",savereader,0)); return 0;
     case 200: { if(!rtotal) { WARN("fs: the game requests the RomFS but there is none (put the romfs folder in %s)\n",g_datadir); }

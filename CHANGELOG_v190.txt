@@ -1,6 +1,16 @@
 SwitchRecomp v190 test - MZ Labs
 
-This is v190 with a second renderer to try out. Everything else is the same as v190.
+This is v190 with a second renderer to try out.
+
+NATIVE HORIZON ADAPTER (EXPERIMENTAL)
+The Runtime defaults to Legacy routing and continues to load ABI 1 code modules.
+Set SWR_NATIVE_HOS=1 and enable any of SWR_NATIVE_TIME, SWR_NATIVE_FS,
+SWR_NATIVE_THREAD or SWR_NATIVE_SYNC to opt in. Native file access supports
+read-only ordinary files on the emulated SD card. File open, read, size and
+close use one backend for the object's lifetime. SWR_NATIVE_APIS accepts
+comma-separated per-operation choices (for example, svc.0x1e=native).
+SWR_NATIVE_TRACE=1 logs versioned JSON records with route decisions, guest
+results and host errors. See tests/nha/README.md for scopes and verification.
 
 VULKAN RENDERER (TEST)
 F1 has a new Renderer row: OpenGL or Vulkan. Changing it saves renderer= in the game's .ini and

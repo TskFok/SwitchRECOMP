@@ -6,6 +6,8 @@
 /* platform glue: threads, timers, VM, files. win32 + posix */
 #include "rt.h"
 #include <time.h>
+#include <errno.h>
+#include <math.h>
 
 __thread void* tls_thread;
 int g_verbose = 1;
@@ -14,17 +16,34 @@ static PMutex g_logm; static int g_logm_ok;
 
 __thread FILE* g_log_redirect;   /* redirect for the threads.txt dumps so they don't end up in the log, it's per
                                     thread so the other threads keep logging like normal */
-void logf_(int lvl, const char* fmt, ...){
+int logf_(int lvl, const char* fmt, ...){
   if(!g_logm_ok){ pm_init(&g_logm); g_logm_ok=1; }
-  char buf[2048]; va_list ap; va_start(ap,fmt); vsnprintf(buf,sizeof buf,fmt,ap); va_end(ap);
-  { FILE* rf=g_log_redirect; if(rf){ fputs(buf,rf); return; } }
-  static u64 t0; u64 now=plat_ns(); if(!t0) t0=now;
-  char tb[24]; snprintf(tb,sizeof tb,"[%7.2f] ",(double)(now-t0)/1e9);
+  char buf[2048];
+  va_list ap; va_start(ap,fmt); int n=vsnprintf(buf,sizeof buf,fmt,ap); va_end(ap);
+  if(n<0) return -1;
+  int failed=(size_t)n>=sizeof buf;
+  FILE* rf=g_log_redirect;
+  if(rf) return fputs(buf,rf)<0 || failed;
+  u64 now=plat_ns();
   pm_lock(&g_logm);
-  if(!g_logf){ char p[1200]; snprintf(p,sizeof p,"%s%s.log",g_exedir,g_exename[0]?g_exename:"switchrecomp"); g_logf=fopen(p,"w"); }
-  if(g_logf){ static int bol=1; if(bol) fputs(tb,g_logf); fputs(buf,g_logf); size_t L=strlen(buf); bol= L && buf[L-1]=='\n'; fflush(g_logf); }
-  if(lvl<=1 || g_verbose>=2) fputs(buf,stderr);
+  static u64 t0;
+  if(!t0) t0=now;
+  char tb[24]; snprintf(tb,sizeof tb,"[%7.2f] ",(double)(now>=t0? now-t0:0)/1e9);
+  if(!g_logf){
+    char p[1200];
+    snprintf(p,sizeof p,"%s%s.log",g_exedir,g_exename[0]?g_exename:"switchrecomp");
+    g_logf=fopen(p,"w");
+  }
+  if(g_logf){
+    static int bol=1;
+    if(bol && fputs(tb,g_logf)<0) failed=1;
+    if(fputs(buf,g_logf)<0 || fflush(g_logf)) failed=1;
+    size_t len=strlen(buf);
+    bol=len && buf[len-1]=='\n';
+  } else failed=1;
+  if(lvl<=1 || g_verbose>=2) if(fputs(buf,stderr)<0) failed=1;
   pm_unlock(&g_logm);
+  return failed;
 }
 
 volatile int g_exit_logged;   /* the log already says why the process ends (exit_tls_cb) */
@@ -51,13 +70,15 @@ void pm_lock(PMutex* m){ AcquireSRWLockExclusive(&m->l); }
 void pm_unlock(PMutex* m){ ReleaseSRWLockExclusive(&m->l); }
 
 void pc_init(PCond* c){ InitializeConditionVariable(&c->c); }
+void pc_destroy(PCond* c){ (void)c; }
 
 void pc_signal(PCond* c){ WakeConditionVariable(&c->c); }
 
 void pc_broadcast(PCond* c){ WakeAllConditionVariable(&c->c); }
 
 int pc_wait(PCond* c, PMutex* m, i64 ns){
-  DWORD ms= ns<0? INFINITE : (DWORD)((ns+999999)/1000000);
+  u64 rounded=ns<0? INFINITE : (u64)ns/1000000+(ns%1000000!=0);
+  DWORD ms=ns>=0 && rounded>=INFINITE? INFINITE-1 : (DWORD)rounded;
   if(!SleepConditionVariableSRW(&c->c,&m->l,ms,0)) return GetLastError()==ERROR_TIMEOUT? 1 : 0;
   return 0; }
 
@@ -66,14 +87,20 @@ typedef struct { PThreadFn fn; void* arg; } TArg;
 /* 64 KB kept free past the guard page: a stack overflow can still write its line in the log */
 static unsigned __stdcall tstart(void* p){ TArg a=*(TArg*)p; free(p); { ULONG g=64*1024; SetThreadStackGuarantee(&g); } a.fn(a.arg); return 0; }
 
-int plat_thread(PThreadFn fn, void* arg, size_t stack){
-  TArg* a=malloc(sizeof *a); a->fn=fn; a->arg=arg;
+int plat_thread_try(PThreadFn fn, void* arg, size_t stack, PError* error){
+  TArg* a=malloc(sizeof *a);
+  if(!a){ *error=(PError){PERR_ERRNO,ENOMEM}; return -1; }
+  a->fn=fn; a->arg=arg;
   /* at least 8 MB reserved (only what's used gets committed): the video driver compiles shaders on the calling thread,
      and the vulkan renderer's pipeline threads ask for 1 MB. suspected cause of Tomodachi Life on intel closing at its
      first 3D draw with no line in the log (our GL shader threads already use 8 MB) */
   if(stack<(8u<<20)) stack=8u<<20;
   uintptr_t h=_beginthreadex(NULL,(unsigned)stack,tstart,a,STACK_SIZE_PARAM_IS_A_RESERVATION,NULL);
-  if(!h) return -1;
+  if(!h){
+    *error=(PError){PERR_ERRNO,(u32)errno};
+    free(a);
+    return -1;
+  }
   { extern void plat_prof_add_thread(HANDLE); plat_prof_add_thread((HANDLE)h); }
   CloseHandle((HANDLE)h); return 0; }
 
@@ -427,7 +454,8 @@ void pm_lock(PMutex* m){ pthread_mutex_lock(&m->l); }
 
 void pm_unlock(PMutex* m){ pthread_mutex_unlock(&m->l); }
 
-void pc_init(PCond* c){ pthread_condattr_t a; pthread_condattr_init(&a); pthread_condattr_setclock(&a,CLOCK_MONOTONIC); pthread_cond_init(&c->c,&a); }
+void pc_init(PCond* c){ pthread_condattr_t a; pthread_condattr_init(&a); pthread_condattr_setclock(&a,CLOCK_MONOTONIC); pthread_cond_init(&c->c,&a); pthread_condattr_destroy(&a); }
+void pc_destroy(PCond* c){ pthread_cond_destroy(&c->c); }
 
 void pc_signal(PCond* c){ pthread_cond_signal(&c->c); }
 
@@ -443,9 +471,24 @@ typedef struct { PThreadFn fn; void* arg; } TArg;
 
 static void* tstart(void* p){ TArg a=*(TArg*)p; free(p); a.fn(a.arg); return NULL; }
 
-int plat_thread(PThreadFn fn, void* arg, size_t stack){
-  TArg* a=malloc(sizeof *a); a->fn=fn; a->arg=arg; pthread_attr_t at; pthread_attr_init(&at); pthread_attr_setstacksize(&at,stack);
-  pthread_attr_setdetachstate(&at,PTHREAD_CREATE_DETACHED); pthread_t t; int r=pthread_create(&t,&at,tstart,a); pthread_attr_destroy(&at); return r? -1 : 0; }
+int plat_thread_try(PThreadFn fn, void* arg, size_t stack, PError* error){
+  TArg* a=malloc(sizeof *a);
+  if(!a){ *error=(PError){PERR_ERRNO,ENOMEM}; return -1; }
+  a->fn=fn; a->arg=arg;
+  pthread_attr_t at;
+  int r=pthread_attr_init(&at);
+  if(!r){
+    r=pthread_attr_setstacksize(&at,stack);
+    if(!r) r=pthread_attr_setdetachstate(&at,PTHREAD_CREATE_DETACHED);
+    pthread_t thread;
+    if(!r) r=pthread_create(&thread,&at,tstart,a);
+    pthread_attr_destroy(&at);
+  }
+  if(!r) return 0;
+  free(a);
+  *error=(PError){PERR_ERRNO,(u32)r};
+  return -1;
+}
 
 void plat_thread_exit(void){ pthread_exit(NULL); }
 
@@ -569,4 +612,244 @@ int plat_thread_pc(void* h, u64* pc){ (void)h; (void)pc; return 0; }
 
 int plat_addr_module(u64 a, char* name, int n, u64* off){ (void)a; (void)name; (void)n; (void)off; return 0; }
 int plat_text_input(const u16* def, u16* out, int max){ (void)def; (void)out; (void)max; return -1; }
+#endif
+
+int plat_thread(PThreadFn fn, void* arg, size_t stack){
+  PError error={0};
+  return plat_thread_try(fn,arg,stack,&error);
+}
+
+/* Read-only file handles. Keep resolution and the open in one host operation
+   relative to an opened root. In particular, never reopen an inspected path. */
+static int file_path_valid(const char* path){
+  if(!*path) return 0;
+  for(const char* p=path;;){
+    const char* start=p;
+    for(;*p && *p!='/';p++)
+      if(*p==':' || *p=='\\' || (u8)*p<32) return 0;
+    size_t len=(size_t)(p-start);
+    if(!len || (len==1 && start[0]=='.') || (len==2 && start[0]=='.' && start[1]=='.')) return 0;
+    if(!*p) return 1;
+    p++;
+  }
+}
+
+static int file_range_valid(u64 offset, u64 size){
+  return offset<=INT64_MAX && size<=INT64_MAX-offset && size<=SIZE_MAX;
+}
+
+#if defined(_WIN32)
+#include <winternl.h>
+#include <wchar.h>
+
+#ifndef OBJ_DONT_REPARSE
+#define OBJ_DONT_REPARSE 0x1000L
+#endif
+
+static int file_win_error(PError* error, DWORD code){
+  *error=(PError){PERR_WIN32,code};
+  switch(code){
+    case ERROR_FILE_NOT_FOUND: case ERROR_PATH_NOT_FOUND: case ERROR_DIRECTORY: return PFILE_MISSING;
+    case ERROR_ACCESS_DENIED: case ERROR_SHARING_VIOLATION:
+    case ERROR_CANT_ACCESS_FILE: case ERROR_CANT_RESOLVE_FILENAME: return PFILE_DENIED;
+    case ERROR_NOT_SUPPORTED: case ERROR_CALL_NOT_IMPLEMENTED: return PFILE_UNSUPPORTED;
+    case ERROR_INVALID_NAME: case ERROR_FILENAME_EXCED_RANGE: return PFILE_INVALID;
+    default: return PFILE_IO;
+  }
+}
+
+static int file_wide_path(const char* path, wchar_t* out, int cap){
+  if(!MultiByteToWideChar(CP_UTF8,MB_ERR_INVALID_CHARS,path,-1,out,cap)) return 0;
+  for(wchar_t* p=out;*p;p++) if(*p==L'/') *p=L'\\';
+  return 1;
+}
+
+static int file_open_relative(HANDLE root, wchar_t* path, int directory, HANDLE* out, PError* error){
+  typedef NTSTATUS (NTAPI *NtOpen)(PHANDLE,ACCESS_MASK,POBJECT_ATTRIBUTES,PIO_STATUS_BLOCK,
+                                  PLARGE_INTEGER,ULONG,ULONG,ULONG,ULONG,PVOID,ULONG);
+  typedef ULONG (NTAPI *NtError)(NTSTATUS);
+  HMODULE ntdll=GetModuleHandleW(L"ntdll.dll");
+  NtOpen open_file=ntdll? (NtOpen)GetProcAddress(ntdll,"NtCreateFile") : NULL;
+  NtError dos_error=ntdll? (NtError)GetProcAddress(ntdll,"RtlNtStatusToDosError") : NULL;
+  if(!open_file || !dos_error) return PFILE_UNSUPPORTED;
+
+  USHORT bytes=(USHORT)(wcslen(path)*sizeof *path);
+  UNICODE_STRING name={bytes,bytes,path};
+  OBJECT_ATTRIBUTES attrs={.Length=sizeof attrs,.RootDirectory=root,.ObjectName=&name,
+                           .Attributes=OBJ_CASE_INSENSITIVE|OBJ_DONT_REPARSE};
+  IO_STATUS_BLOCK result;
+  ULONG options=FILE_SYNCHRONOUS_IO_NONALERT|(directory? FILE_DIRECTORY_FILE : FILE_NON_DIRECTORY_FILE);
+  ACCESS_MASK access=directory? FILE_TRAVERSE|FILE_READ_ATTRIBUTES|SYNCHRONIZE : FILE_GENERIC_READ;
+  ULONG share=FILE_SHARE_READ|FILE_SHARE_WRITE|(directory? 0 : FILE_SHARE_DELETE);
+  NTSTATUS status=open_file(out,access,&attrs,&result,NULL,FILE_ATTRIBUTE_NORMAL,share,FILE_OPEN,options,NULL,0);
+  if(status<0) return file_win_error(error,dos_error(status));
+  return PFILE_OK;
+}
+
+static int file_under_root(HANDLE root, HANDLE file, PError* error){
+  wchar_t parent[2048], child[4096];
+  DWORD n=GetFinalPathNameByHandleW(root,parent,2048,VOLUME_NAME_GUID);
+  if(!n) return file_win_error(error,GetLastError());
+  if(n>=2048) return PFILE_INVALID;
+  DWORD m=GetFinalPathNameByHandleW(file,child,4096,VOLUME_NAME_GUID);
+  if(!m) return file_win_error(error,GetLastError());
+  if(m>=4096) return PFILE_INVALID;
+  if(parent[n-1]==L'\\') n--;
+  if(m<=n || child[n]!=L'\\' || wmemcmp(parent,child,n)!=0) return PFILE_DENIED;
+  return PFILE_OK;
+}
+
+int plat_file_open_read(PFile* file, const char* root, const char* path, PError* error){
+  wchar_t wide[2048], absolute[2048], relative[768];
+  if(!file_path_valid(path)) return PFILE_INVALID;
+  if(!file_wide_path(root,wide,2048) || !file_wide_path(path,relative,768))
+    return file_win_error(error,GetLastError());
+  DWORD len=GetFullPathNameW(wide,2048,absolute,NULL);
+  if(!len) return file_win_error(error,GetLastError());
+  if(len>=2048) return PFILE_INVALID;
+  if(len<3 || absolute[1]!=L':' || absolute[2]!=L'\\') return PFILE_UNSUPPORTED;
+  wchar_t drive[]={absolute[0],L':',L'\\',0};
+  if(GetDriveTypeW(drive)!=DRIVE_FIXED) return PFILE_UNSUPPORTED;
+  HANDLE volume=CreateFileW(drive,FILE_TRAVERSE|FILE_READ_ATTRIBUTES|SYNCHRONIZE,
+                            FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,NULL,OPEN_EXISTING,
+                            FILE_FLAG_BACKUP_SEMANTICS|FILE_FLAG_OPEN_REPARSE_POINT,NULL);
+  if(volume==INVALID_HANDLE_VALUE) return file_win_error(error,GetLastError());
+  while(len>3 && absolute[len-1]==L'\\') absolute[--len]=0;
+  HANDLE directory=volume;
+  int rc=PFILE_OK;
+  if(len>3) rc=file_open_relative(volume,absolute+3,1,&directory,error);
+  if(rc==PFILE_OK && directory!=volume) rc=file_under_root(volume,directory,error);
+  HANDLE handle=INVALID_HANDLE_VALUE;
+  if(rc==PFILE_OK) rc=file_open_relative(directory,relative,0,&handle,error);
+  if(rc==PFILE_OK) rc=file_under_root(directory,handle,error);
+  if(rc==PFILE_OK){
+    BY_HANDLE_FILE_INFORMATION info;
+    if(!GetFileInformationByHandle(handle,&info)) rc=file_win_error(error,GetLastError());
+    else if(GetFileType(handle)!=FILE_TYPE_DISK || info.dwFileAttributes&(FILE_ATTRIBUTE_DIRECTORY|FILE_ATTRIBUTE_REPARSE_POINT))
+      rc=PFILE_DENIED;
+  }
+  if(directory && directory!=volume && directory!=INVALID_HANDLE_VALUE) CloseHandle(directory);
+  CloseHandle(volume);
+  if(rc!=PFILE_OK){
+    if(handle && handle!=INVALID_HANDLE_VALUE) CloseHandle(handle);
+    return rc;
+  }
+  file->handle=handle;
+  pm_init(&file->lock);
+  return PFILE_OK;
+}
+
+int plat_file_read_at(PFile* file, void* buf, u64 size, u64 off, u64* count, PError* error){
+  *count=0;
+  if(!file_range_valid(off,size)) return PFILE_INVALID;
+  if(!size) return PFILE_OK;
+  LARGE_INTEGER pos;
+  pos.QuadPart=(i64)off;
+  pm_lock(&file->lock);
+  int rc=PFILE_OK;
+  if(!SetFilePointerEx(file->handle,pos,NULL,FILE_BEGIN)) rc=file_win_error(error,GetLastError());
+  while(rc==PFILE_OK && *count<size){
+    DWORD chunk=(DWORD)(size-*count>0x40000000? 0x40000000 : size-*count), n=0;
+    if(!ReadFile(file->handle,(u8*)buf+*count,chunk,&n,NULL)){
+      DWORD code=GetLastError();
+      if(code!=ERROR_HANDLE_EOF) rc=file_win_error(error,code);
+      break;
+    }
+    *count+=n;
+    if(n<chunk) break;
+  }
+  pm_unlock(&file->lock);
+  return rc;
+}
+
+int plat_file_size64(PFile* file, u64* size, PError* error){
+  LARGE_INTEGER n;
+  if(!GetFileSizeEx(file->handle,&n)) return file_win_error(error,GetLastError());
+  *size=(u64)n.QuadPart;
+  return PFILE_OK;
+}
+
+int plat_file_close(PFile* file, PError* error){
+  if(!CloseHandle(file->handle)) return file_win_error(error,GetLastError());
+  return PFILE_OK;
+}
+
+#else
+#include <errno.h>
+#include <fcntl.h>
+#include <sys/stat.h>
+#if defined(__linux__)
+#include <linux/openat2.h>
+#include <sys/syscall.h>
+#endif
+
+static int file_posix_error(PError* error, int code){
+  *error=(PError){PERR_ERRNO,(u32)code};
+  switch(code){
+    case ENOENT: case ENOTDIR: case EISDIR: return PFILE_MISSING;
+    case EACCES: case EPERM: case ELOOP: case EXDEV: return PFILE_DENIED;
+    case ENOSYS: case EOPNOTSUPP: return PFILE_UNSUPPORTED;
+    case ENAMETOOLONG: case EOVERFLOW: return PFILE_INVALID;
+    default: return PFILE_IO;
+  }
+}
+
+int plat_file_open_read(PFile* file, const char* root, const char* path, PError* error){
+  if(!file_path_valid(path)) return PFILE_INVALID;
+#if defined(__linux__)
+  struct open_how mount={.flags=O_PATH|O_DIRECTORY|O_CLOEXEC,.resolve=RESOLVE_NO_SYMLINKS};
+  int dir=(int)syscall(SYS_openat2,AT_FDCWD,root,&mount,sizeof mount);
+  if(dir<0) return file_posix_error(error,errno);
+  struct open_how how={.flags=O_PATH|O_CLOEXEC,
+                      .resolve=RESOLVE_BENEATH|RESOLVE_NO_SYMLINKS|RESOLVE_NO_XDEV};
+  int fd=(int)syscall(SYS_openat2,dir,path,&how,sizeof how);
+  int code=errno;
+  close(dir);
+  if(fd<0) return file_posix_error(error,code);
+  struct stat st;
+  if(fstat(fd,&st)<0){ code=errno; close(fd); return file_posix_error(error,code); }
+  if(!S_ISREG(st.st_mode)){ close(fd); return PFILE_UNSUPPORTED; }
+  /* Reopen the verified inode through the kernel's descriptor link. Opening a
+     FIFO or device for data access before fstat could have side effects. */
+  char proc_path[64];
+  snprintf(proc_path,sizeof proc_path,"/proc/self/fd/%d",fd);
+  int readable=openat(AT_FDCWD,proc_path,O_RDONLY|O_CLOEXEC);
+  code=errno;
+  close(fd);
+  if(readable<0) return file_posix_error(error,code);
+  file->fd=readable;
+  return PFILE_OK;
+#else
+  (void)file; (void)root; (void)error;
+  return PFILE_UNSUPPORTED;
+#endif
+}
+
+int plat_file_read_at(PFile* file, void* buf, u64 size, u64 off, u64* count, PError* error){
+  *count=0;
+  if(!file_range_valid(off,size)) return PFILE_INVALID;
+  while(*count<size){
+    size_t chunk=(size_t)(size-*count>0x40000000? 0x40000000 : size-*count);
+    ssize_t n=pread(file->fd,(u8*)buf+*count,chunk,(off_t)(off+*count));
+    if(n<0){
+      if(errno==EINTR) continue;
+      return file_posix_error(error,errno);
+    }
+    *count+=(u64)n;
+    if((size_t)n<chunk) break;
+  }
+  return PFILE_OK;
+}
+
+int plat_file_size64(PFile* file, u64* size, PError* error){
+  struct stat st;
+  if(fstat(file->fd,&st)<0) return file_posix_error(error,errno);
+  *size=(u64)st.st_size;
+  return PFILE_OK;
+}
+
+int plat_file_close(PFile* file, PError* error){
+  if(close(file->fd)<0) return file_posix_error(error,errno);
+  return PFILE_OK;
+}
 #endif

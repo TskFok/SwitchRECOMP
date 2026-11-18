@@ -10,7 +10,7 @@
 #define SWR_RUNTIME_VERSION "v190 test"
 #endif
 const char* g_runtime_version=SWR_RUNTIME_VERSION;
-#include "rt.h"
+#include "native_hos.h"
 #include "audio.h"
 #include <sys/stat.h>
 static int g_opt_null_trap;   /* null_trap= in the ini */
@@ -99,7 +99,7 @@ static void vsync_tick_vt(void){
   u64 v=guest_ns(); if(!next) next=v;
   if(v>=next){ vi_vsync_tick(); next+=16666667ull; if(v>next+50000000ull) next=v; } }
 
-static u64 rt_ticks(void){ return (u64)((double)guest_ns()*0.0192); }
+u64 rt_ticks(void){ return (u64)((double)guest_ns()*0.0192); }
 
 void swr_fpcr_apply(CPU* c){
 #if defined(__aarch64__)
@@ -424,6 +424,7 @@ int swr_main(int argc, char** argv){
   plat_install_crash_handler();
   g_t0=plat_ns();
   LOG("SwitchRecomp - %s (runtime %s, built %s)\n",g_exename,SWR_RUNTIME_VERSION,__DATE__);
+  if(nha_init()) return 1;
   if(load_code()) fatal("Could not load the game's recompiled code.");
   if(g_mod->abi!=1) fatal("The recompiled code is from another SwitchRecomp version.");
   g_title_id=g_mod->title_id;
@@ -474,7 +475,7 @@ int swr_main(int argc, char** argv){
         LOG("warning: %d s without a new image (frames=%d, GPU submits=%llu)\n",sec,g_frames,(unsigned long long)g_gpu_submits); kernel_dump_threads_stall(); } }
     next+=16666667ull; u64 now=plat_ns(); if(next>now) plat_sleep_ns((i64)(next-now)); else if(now-next>100000000ull) next=now;
   }
-  save_hints(); { extern void gpu_gl_rec_finish(void); gpu_gl_rec_finish(); } { extern void snxvk_exit(void); snxvk_exit(); } LOG("Exit.\n"); fflush(NULL);
+  save_hints(); { extern void gpu_gl_rec_finish(void); gpu_gl_rec_finish(); } { extern void snxvk_exit(void); snxvk_exit(); } LOG("Exit.\n"); nha_trace_finish(); fflush(NULL);
 #if defined(_WIN32)
   TerminateProcess(GetCurrentProcess(),0);   /* don't join the guest threads */
 #endif

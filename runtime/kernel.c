@@ -3,7 +3,8 @@
    Forks and derived works have to keep the credit to SwitchRecomp by MZ Labs and the startup screen. */
 /* HLE kernel: handles, objects, guest threads (1:1 with host threads), sync (events, mutex/condvar, address
    arbiter) and the SVCs games really call */
-#include "rt.h"
+#include "native_hos.h"
+#include <errno.h>
 
 PMutex g_klock;
 u64 g_title_id = 0x0100000000001000ull;
@@ -16,6 +17,7 @@ static u64 g_next_tid = 0x50;
 #define R_BADHANDLE   0xE401
 #define R_BADSTATE    0xFA01
 #define R_BADADDR     0xCC01
+#define R_OUTOFHANDLES 0xD201
 #define R_OUTOFMEM    0xD001
 #define R_BADENUM     0xF001
 #define R_NOTFOUND    0xF201
@@ -38,11 +40,38 @@ void kobj_ref(KObj* o){ if(o) __atomic_add_fetch(&o->refs,1,__ATOMIC_SEQ_CST); }
 
 void kobj_unref(KObj* o){ if(o && __atomic_sub_fetch(&o->refs,1,__ATOMIC_SEQ_CST)==0 && o->destroy) o->destroy(o); }
 
-u32 h_new(KObj* o){
+enum { EVENT_UNRESTRICTED, EVENT_WRITER, EVENT_READER };
+static u8 hrole[MAXH];
+
+static u32 h_new_nl(KObj* o, u8 role){
+  for(int k=0;k<MAXH;k++){
+    int i=hnext;
+    hnext=hnext+1>=MAXH? 1 : hnext+1;
+    if(htab[i]) continue;
+    htab[i]=o;
+    hrole[i]=role;
+    kobj_ref(o);
+    hgen[i]=(u16)((hgen[i]+1)&0x7FFF);
+    if(!hgen[i]) hgen[i]=1;
+    return ((u32)hgen[i]<<15)|(u32)i;
+  }
+  return 0;
+}
+
+static u32 h_new_role(KObj* o, u8 role){
   pm_lock(&g_klock);
-  for(int k=0;k<MAXH;k++){ int i=hnext; hnext=hnext+1>=MAXH? 1 : hnext+1;
-    if(!htab[i]){ htab[i]=o; kobj_ref(o); hgen[i]=(u16)((hgen[i]+1)&0x7FFF); if(!hgen[i]) hgen[i]=1; pm_unlock(&g_klock); return ((u32)hgen[i]<<15)|(u32)i; } }
-  pm_unlock(&g_klock); fatal("no free handles"); return 0; }
+  u32 h=h_new_nl(o,role);
+  pm_unlock(&g_klock);
+  return h;
+}
+
+u32 h_try_new(KObj* o){ return h_new_role(o,EVENT_UNRESTRICTED); }
+
+u32 h_new(KObj* o){
+  u32 h=h_try_new(o);
+  if(!h) fatal("no free handles");
+  return h;
+}
 
 static KObj* h_get_nl(u32 h){
   if(h==H_CUR_THREAD) return (KObj*)kthread_cur();
@@ -52,15 +81,32 @@ KObj* h_get(u32 h){ pm_lock(&g_klock); KObj* o=h_get_nl(h); pm_unlock(&g_klock);
 
 KObj* h_get_type(u32 h, int t){ KObj* o=h_get(h); return (o && o->type==t)? o : NULL; }
 
+KObj* h_ref_type(u32 h, int type){
+  pm_lock(&g_klock);
+  KObj* o=h_get_nl(h);
+  if(o && o->type!=type) o=NULL;
+  kobj_ref(o);
+  pm_unlock(&g_klock);
+  return o;
+}
+
 int h_close(u32 h){
   pm_lock(&g_klock); u32 i=h&0x7FFF;
   if(!i || i>=MAXH || !htab[i] || hgen[i]!=(h>>15)){ pm_unlock(&g_klock); return R_BADHANDLE; }
   KObj* o=htab[i]; htab[i]=NULL; pm_unlock(&g_klock); kobj_unref(o); return 0; }
 
 /* ============================================================ waits */
-static void waiter_add(KObj* o, KThread* t){
-  if(o->nwait==o->capwait){ o->capwait=o->capwait? o->capwait*2 : 4; o->waiters=realloc(o->waiters,sizeof(KThread*)*o->capwait); }
-  o->waiters[o->nwait++]=t; }
+static int waiter_add(KObj* o, KThread* t){
+  if(o->nwait==o->capwait){
+    int cap=o->capwait? o->capwait*2 : 4;
+    KThread** waiters=realloc(o->waiters,sizeof *waiters*cap);
+    if(!waiters) return 0;
+    o->waiters=waiters;
+    o->capwait=cap;
+  }
+  o->waiters[o->nwait++]=t;
+  return 1;
+}
 
 static void waiter_del(KObj* o, KThread* t){
   for(int i=0;i<o->nwait;i++) if(o->waiters[i]==t){ o->waiters[i]=o->waiters[--o->nwait]; return; } }
@@ -84,7 +130,7 @@ static int ev_sig(KObj* o){ return ((KEvent*)o)->signaled; }
 static void ev_destroy(KObj* o){ free(o->waiters); free(o); }
 
 KEvent* kevent_new(const char* name, int autoclear){
-  KEvent* e=calloc(1,sizeof *e); e->o.type=KO_EVENT; e->o.is_signaled=ev_sig; e->o.destroy=ev_destroy; e->o.name=name; e->autoclear=autoclear; return e; }
+  KEvent* e=calloc(1,sizeof *e); if(!e) return NULL; e->o.type=KO_EVENT; e->o.is_signaled=ev_sig; e->o.destroy=ev_destroy; e->o.name=name; e->autoclear=autoclear; return e; }
 
 void kevent_signal(KEvent* e){ pm_lock(&g_klock); e->signaled=1; kobj_signal_nl(&e->o); pm_unlock(&g_klock); }
 
@@ -100,17 +146,33 @@ static int th_sig(KObj* o){ return ((KThread*)o)->state==2; }
 
 static void th_destroy(KObj* o){ (void)o; /* thread objects are never freed */ }
 
-static u64 alloc_tls(void){ u64 a=kmem_alloc(0x1000,MS_TLS,PERM_RW); memset(GP(a),0,0x1000); return a; }
-
-KThread* kthread_create(u64 entry, u64 arg, u64 stack_top, int prio, int core){
+static KThread* kthread_alloc(u64 entry, u64 arg, u64 stack_top, int prio, int core, PError* error){
   KThread* t=calloc(1,sizeof *t);
+  if(!t){ *error=(PError){PERR_ERRNO,ENOMEM}; return NULL; }
   t->o.type=KO_THREAD; t->o.is_signaled=th_sig; t->o.destroy=th_destroy; t->o.name="thread";
-  t->entry=entry; t->arg=arg; t->stack_top=stack_top; t->prio=prio; t->core=core<0? 0 : core; t->ideal=t->core; t->affinity=1ull<<t->core;
-  t->tls=alloc_tls(); pc_init(&t->cv);
-  pm_lock(&g_klock); t->id=g_next_tid++; if(g_nthreads<256) g_threads[g_nthreads++]=t; pm_unlock(&g_klock);
-  CPU* c=&t->cpu; memset(c,0,sizeof *c);
+  t->entry=entry; t->arg=arg; t->stack_top=stack_top; t->prio=prio;
+  t->core=core<0? 0 : core; t->ideal=t->core;
+  t->affinity=t->core<64? 1ull<<t->core : 1;
+  t->tls=kmem_try_alloc(0x1000,MS_TLS,PERM_RW);
+  if(!t->tls){ free(t); return NULL; }
+  memset(GP(t->tls),0,0x1000);
+  pc_init(&t->cv);
+  CPU* c=&t->cpu;
   c->mem=g_mem; c->disp=g_disp; c->code_lo=g_code_lo; c->code_hi=g_code_hi; c->rt=&g_rtapi; c->thread=t;
   c->tpidrro=t->tls; c->x[0]=arg; c->x[31]=stack_top; c->pc=entry;
+  return t;
+}
+
+static void kthread_publish_nl(KThread* t){
+  t->id=g_next_tid++;
+  if(g_nthreads<256) g_threads[g_nthreads++]=t;
+}
+
+KThread* kthread_create(u64 entry, u64 arg, u64 stack_top, int prio, int core){
+  PError error={0};
+  KThread* t=kthread_alloc(entry,arg,stack_top,prio,core,&error);
+  if(!t) fatal("could not allocate a guest thread");
+  pm_lock(&g_klock); kthread_publish_nl(t); pm_unlock(&g_klock);
   return t;
 }
 
@@ -118,6 +180,8 @@ void swr_fpcr_apply(CPU* c);
 
 static void thread_body(void* p){
   KThread* t=p; kthread_set(t); CPU* c=&t->cpu;
+  /* The creator publishes the running state before allowing guest execution. */
+  pm_lock(&g_klock); pm_unlock(&g_klock);
   __atomic_store_n(&t->host,plat_thread_self(),__ATOMIC_RELEASE);
   swr_fpcr_apply(c);
   LOGV("[thread %llu] starts at %llx\n",(unsigned long long)t->id,(unsigned long long)c->pc);
@@ -128,9 +192,20 @@ static void thread_body(void* p){
   }
 }
 
+static u32 kthread_start_checked(KThread* t, PError* error){
+  pm_lock(&g_klock);
+  u32 rc=R_BADSTATE;
+  if(t->state==0){
+    rc=R_OUTOFMEM;
+    if(!plat_thread_try(thread_body,t,(size_t)64<<20,error)){ t->state=1; rc=0; }
+  }
+  pm_unlock(&g_klock);
+  return rc;
+}
+
 void kthread_start(KThread* t){
-  t->state=1;
-  if(plat_thread(thread_body,t,(size_t)64<<20)) fatal("could not create a system thread");
+  PError error={0};
+  if(kthread_start_checked(t,&error)==R_OUTOFMEM) fatal("could not create a system thread");
 }
 
 void svc_exit_thread(KThread* t){
@@ -157,6 +232,7 @@ void kernel_run_main(u64 entry, u64 stack_size, int prio, int core){
 
 void process_exit(int code){
   g_exiting=1; LOG("The game exited (code %d)\n",code);
+  nha_trace_finish();
   fflush(NULL); exit(code);
 }
 
@@ -208,23 +284,40 @@ static int owner_is_stale_nl(u32 tagv, u64 addr){
 static void heal_note(const char* what, u64 addr, u32 v){
   if(g_heal_n++<20 || !(g_heal_n&1023)) WARN("kernel: mutex %llx repaired (%s, value %x) [%d times]\n",(unsigned long long)addr,what,v,g_heal_n); }
 
-static u32 svc_arbitrate_lock(KThread* t, u32 owner, u64 addr, u32 tag){
+static u32 svc_arbitrate_lock(KThread* t, u32 owner, u64 addr, u32 tag, int checked){
   if(addr&3) return R_BADADDR;
   pm_lock(&g_klock);
+  if(checked && !mem_access_begin(addr,4,PERM_RW)){ pm_unlock(&g_klock); return R_BADADDR; }
   u32 v=__atomic_load_n(U32(addr),__ATOMIC_SEQ_CST);
-  if(v!=(owner|HANDLE_WAIT)){ pm_unlock(&g_klock); return 0; }
+  if(v!=(owner|HANDLE_WAIT)){
+    if(checked) mem_access_end();
+    pm_unlock(&g_klock);
+    return 0;
+  }
+  if(checked){
+    KObj* o=h_get_nl(owner);
+    if(!o || o->type!=KO_THREAD){ mem_access_end(); pm_unlock(&g_klock); return R_BADHANDLE; }
+  }
   if(owner_is_stale_nl(v,addr)){
     /* already released: hand it to us, keep the waiters bit if anyone else is queued */
     u32 nv=tag|(wl_count(2,addr)? HANDLE_WAIT : 0);
     if(__atomic_compare_exchange_n(U32(addr),&v,nv,0,__ATOMIC_SEQ_CST,__ATOMIC_SEQ_CST)) heal_note("on request",addr,v);
+    if(checked) mem_access_end();
     pm_unlock(&g_klock); return 0; }   /* caller rereads the word and retries */
+  if(checked) mem_access_end();
   t->wait_kind=2; t->wait_addr=addr; t->wait_tag=tag; t->woken=0; wl_add(t);
   sleep_nl(t,-1);
   u32 r=t->wait_result; pm_unlock(&g_klock); return r; }
 
-static u32 svc_arbitrate_unlock(u64 addr){
+static u32 svc_arbitrate_unlock(u64 addr, int checked){
   if(addr&3) return R_BADADDR;
-  pm_lock(&g_klock); unlock_nl(addr); pm_unlock(&g_klock); return 0; }
+  pm_lock(&g_klock);
+  if(checked && !mem_access_begin(addr,4,PERM_RW)){ pm_unlock(&g_klock); return R_BADADDR; }
+  unlock_nl(addr);
+  if(checked) mem_access_end();
+  pm_unlock(&g_klock);
+  return 0;
+}
 
 static u32 svc_wait_cv(KThread* t, u64 maddr, u64 key, u32 tag, i64 timeout){
   pm_lock(&g_klock);
@@ -343,26 +436,105 @@ static u32 svc_signal_addr(u64 addr, u32 type, i32 value, i32 count){
   pm_unlock(&g_klock); return 0; }
 
 /* ============================================================ WaitSynchronization */
-static u32 svc_wait_sync(KThread* t, u64 hptr, u32 n, i64 timeout, u32* out_idx){
-  if(n>64) return R_OUTOFRANGE;
-  KObj* objs[64]; u32 hs[64];
-  for(u32 i=0;i<n;i++) hs[i]=gr32(hptr+i*4);
-  pm_lock(&g_klock);
-  for(u32 i=0;i<n;i++){ objs[i]=h_get_nl(hs[i]); if(!objs[i] || !objs[i]->is_signaled){ pm_unlock(&g_klock); if(!objs[i]){ static u32 nw; if(nw++<20 || !(nw&0xFFFF)) WARN("WaitSynchronization: invalid handle %x (%u times)\n",hs[i],nw); } return R_BADHANDLE; } }
-  if(t->cancel){ t->cancel=0; pm_unlock(&g_klock); return R_CANCELLED; }
-  u64 end= timeout<0? 0 : plat_ns()+(u64)timeout;
+static u32 wait_sync_nl(KThread* t, KObj** objs, u32 n, i64 timeout, u32* out_idx){
+  u64 end=timeout<0? 0 : plat_ns()+(u64)timeout;
   for(;;){
-    for(u32 i=0;i<n;i++) if(objs[i]->is_signaled(objs[i])){ *out_idx=i; pm_unlock(&g_klock); return 0; }
-    if(timeout==0){ pm_unlock(&g_klock); return R_TIMEOUT; }
-    i64 rem=-1; if(timeout>0){ u64 now=plat_ns(); if(now>=end){ pm_unlock(&g_klock); return R_TIMEOUT; } rem=(i64)(end-now); }
-    /* n==0 is a plain sleep that CancelSynchronization ends (nn::os MultiWait with only user objects) */
-    t->woken=0; t->wait_kind=1; t->wait_name= n? objs[0]->name : "sleep"; t->wait_timeout=timeout;
-    for(u32 i=0;i<n;i++) waiter_add(objs[i],t);
-    sleep_nl(t,rem);
+    if(t->cancel){ t->cancel=0; return R_CANCELLED; }
+    for(u32 i=0;i<n;i++) if(objs[i]->is_signaled(objs[i])){ *out_idx=i; return 0; }
+    if(timeout==0) return R_TIMEOUT;
+    i64 remaining=-1;
+    if(timeout>0){
+      u64 now=plat_ns();
+      if(now>=end) return R_TIMEOUT;
+      remaining=(i64)(end-now);
+    }
+    u32 registered=0;
+    while(registered<n && waiter_add(objs[registered],t)) registered++;
+    if(registered<n){
+      for(u32 i=0;i<registered;i++) waiter_del(objs[i],t);
+      return R_OUTOFMEM;
+    }
+    /* n==0 is a plain sleep that CancelSynchronization ends. */
+    t->woken=0; t->wait_kind=1; t->wait_name=n? objs[0]->name : "sleep"; t->wait_timeout=timeout;
+    sleep_nl(t,remaining);
     for(u32 i=0;i<n;i++) waiter_del(objs[i],t);
     t->wait_kind=0;
-    if(t->cancel){ t->cancel=0; pm_unlock(&g_klock); return R_CANCELLED; }
+    t->wait_name=NULL;
   }
+}
+
+static u32 svc_wait_sync(KThread* t, u64 hptr, u32 n, i64 timeout, u32* out_idx, int checked){
+  if(n>64) return R_OUTOFRANGE;
+  KObj* objs[64];
+  u32 handles[64];
+  if(n){
+    if(checked && ((hptr&3) || !mem_access_begin(hptr,n*4,PERM_R))) return R_BADADDR;
+    memcpy(handles,GP(hptr),n*sizeof *handles);
+    if(checked) mem_access_end();
+  }
+  pm_lock(&g_klock);
+  u32 rc=0, held=0;
+  for(;held<n;held++){
+    u32 h=handles[held];
+    KObj* o=h_get_nl(h);
+    if(!o || !o->is_signaled ||
+       (checked && o->type==KO_EVENT && hrole[h&0x7FFF]==EVENT_WRITER)){ rc=R_BADHANDLE; break; }
+    if(checked && o->type==KO_EVENT && ((KEvent*)o)->autoclear){ rc=R_NOTIMPL; break; }
+    objs[held]=o;
+    kobj_ref(o);
+  }
+  if(!rc) rc=wait_sync_nl(t,objs,n,timeout,out_idx);
+  pm_unlock(&g_klock);
+  for(u32 i=0;i<held;i++) kobj_unref(objs[i]);
+  return rc;
+}
+
+static u32 svc_cancel_sync(u32 handle){
+  KThread* n=(KThread*)h_ref_type(handle,KO_THREAD);
+  if(!n) return R_BADHANDLE;
+  pm_lock(&g_klock);
+  if(n->wait_kind==1) wake(n,R_CANCELLED);
+  n->cancel=1;
+  pm_unlock(&g_klock);
+  kobj_unref(&n->o);
+  return 0;
+}
+
+static u32 svc_event(u32 handle, u32 imm, int checked){
+  pm_lock(&g_klock);
+  KObj* o=h_get_nl(handle);
+  u32 rc=R_BADHANDLE;
+  if(o && o->type==KO_EVENT){
+    KEvent* e=(KEvent*)o;
+    u8 role=hrole[handle&0x7FFF];
+    if(checked && ((imm==0x11 && role==EVENT_READER) || (imm==0x17 && role==EVENT_WRITER))) rc=R_BADHANDLE;
+    else if(checked && e->autoclear) rc=R_NOTIMPL;
+    else if(imm==0x11){ e->signaled=1; kobj_signal_nl(o); rc=0; }
+    else { rc=imm==0x17 && !e->signaled? R_BADSTATE : 0; e->signaled=0; }
+  } else if(o && !checked && imm!=0x11) rc=0;
+  pm_unlock(&g_klock);
+  return rc;
+}
+
+static void svc_create_event(CPU* c, int checked){
+  KEvent* e=kevent_new("user event",0);
+  if(!e){
+    if(!checked) fatal("could not allocate a guest event");
+    c->x[0]=R_OUTOFMEM; c->x[1]=c->x[2]=0;
+    return;
+  }
+  pm_lock(&g_klock);
+  u32 writer=h_new_nl(&e->o,EVENT_WRITER);
+  u32 reader=writer? h_new_nl(&e->o,EVENT_READER) : 0;
+  if(writer && !reader) htab[writer&0x7FFF]=NULL;
+  pm_unlock(&g_klock);
+  if(!reader){
+    ev_destroy(&e->o);
+    if(!checked) fatal("no free handles");
+    c->x[0]=R_OUTOFHANDLES; c->x[1]=c->x[2]=0;
+    return;
+  }
+  c->x[0]=0; c->x[1]=writer; c->x[2]=reader;
 }
 
 /* ============================================================ memory */
@@ -671,24 +843,93 @@ void kernel_dump_regs(CPU* c){
 
 extern KShmem* kshmem_new(u64 size, const char* name);
 
-static void swr_svc_(CPU* c, u32 imm);
+void nha_sleep_thread(CPU* c){
+  KThread* t=kthread_cur();
+  i64 ns=(i64)c->x[0];
+  t->sleep_lr=c->x[30];
+  t->sleep_n++;
+  memcpy(t->sleep_x,c->x,sizeof t->sleep_x);
+  if(ns<=0) plat_yield(); else plat_sleep_ns(ns);
+}
+
+static void native_create_thread(CPU* c, NhaCall* call){
+  u64* x=c->x;
+  u64 entry=x[1], stack=x[3];
+  int prio=(i32)x[4], core=(i32)x[5];
+  if(core==-2) core=default_core();
+  x[1]=0;
+  if(prio<0 || prio>63 || core<0 || core>3){ x[0]=R_BADENUM; return; }
+  if((entry&3) || (stack&15) || entry<AS_BASE || entry>=AS_SIZE || stack<AS_BASE || stack>AS_SIZE){
+    x[0]=R_BADADDR;
+    return;
+  }
+  KThread* t=kthread_alloc(entry,x[2],stack,prio,core,&call->host_error);
+  if(!t){ x[0]=R_OUTOFMEM; return; }
+  pm_lock(&g_klock);
+  u32 h=h_new_nl(&t->o,EVENT_UNRESTRICTED);
+  if(h) kthread_publish_nl(t);
+  pm_unlock(&g_klock);
+  if(!h){
+    mem_unmap(t->tls,0x1000);
+    pc_destroy(&t->cv);
+    free(t);
+    x[0]=R_OUTOFHANDLES;
+    return;
+  }
+  x[0]=0;
+  x[1]=h;
+}
+
+void nha_kernel_svc(CPU* c, u32 imm, NhaCall* call){
+  u64* x=c->x;
+  KThread* t=c->thread;
+  switch(imm){
+    case 0x08: native_create_thread(c,call); return;
+    case 0x09: {
+      KThread* target=(KThread*)h_ref_type((u32)x[0],KO_THREAD);
+      if(!target){ x[0]=R_BADHANDLE; return; }
+      x[0]=kthread_start_checked(target,&call->host_error);
+      kobj_unref(&target->o);
+      return;
+    }
+    case 0x0a: nha_end_svc(call,c,NHA_TERMINATED); svc_exit_thread(t); return;
+    case 0x11: case 0x12: case 0x17: x[0]=svc_event((u32)x[0],imm,1); return;
+    case 0x18: {
+      u32 index=0;
+      x[0]=svc_wait_sync(t,x[1],(u32)x[2],(i64)x[3],&index,1);
+      x[1]=index;
+      return;
+    }
+    case 0x19: x[0]=svc_cancel_sync((u32)x[0]); return;
+    case 0x1a: x[0]=svc_arbitrate_lock(t,(u32)x[0],x[1],(u32)x[2],1); return;
+    case 0x1b: x[0]=svc_arbitrate_unlock(x[0],1); return;
+    case 0x45: svc_create_event(c,1); return;
+    default: x[0]=R_NOTIMPL; return;
+  }
+}
+
+static void swr_svc_(CPU* c, u32 imm, NhaCall* call, int* status);
 
 void swr_svc(CPU* c, u32 imm){
   u64 a0=c->x[0],a1=c->x[1],a2=c->x[2];
   u64 a3=c->x[3];
-  swr_svc_(c,imm);
+  NhaCall call;
+  int status=NHA_RETURNED;
+  if(!nha_try_svc(c,imm,&call)) swr_svc_(c,imm,&call,&status);
+  nha_end_svc(&call,c,status);
   { KThread* t=kthread_cur(); if(t){ u32 k=t->svc_hist_n;
       if(k && t->svc_hist[(k-1)%24].imm==imm && t->svc_hist[(k-1)%24].lr==c->x[30]) t->svc_hist[(k-1)%24].n++;
       else { typeof(&t->svc_hist[0]) h=&t->svc_hist[k%24]; h->imm=imm; h->lr=c->x[30]; h->a[0]=a0; h->a[1]=a1; h->a[2]=a2; h->a[3]=a3; h->n=1; t->svc_hist_n=k+1;
         /* WaitSynchronization: keep the first handle now, the array lives on the caller's stack */
-        h->h0= (imm==0x18 && a2>=1 && a1>=AS_BASE && a1<AS_SIZE)? gr32(a1) : 0; }
+        h->h0=0;
+        if(imm==0x18 && a2>=1 && mem_access_begin(a1,4,PERM_R)){ h->h0=gr32(a1); mem_access_end(); } }
       t->svc_hist[(t->svc_hist_n-1)%24].res=(u32)c->x[0]; } }
   if(imm!=0x1E && imm!=0x0B && imm!=0x10){ u32 i=__atomic_fetch_add(&g_svc_ring_n,1,__ATOMIC_RELAXED)&63; SvcRec* r=&g_svc_ring[i];
     r->imm=imm; r->lr=c->x[30]; r->a[0]=a0; r->a[1]=a1; r->a[2]=a2; r->a[3]=a3; r->res=(u32)c->x[0]; r->o1=c->x[1]; }
   static u32 nbad; if((u32)c->x[0]==R_BADHANDLE && imm!=0x16 && (nbad++<20 || !(nbad&0xFFFF))) WARN("SVC 0x%x with invalid handle (args %llx %llx %llx) pc=%llx\n",imm,(unsigned long long)a0,(unsigned long long)a1,(unsigned long long)a2,(unsigned long long)c->pc);
 }
 
-static void swr_svc_(CPU* c, u32 imm){
+static void swr_svc_(CPU* c, u32 imm, NhaCall* call, int* status){
   KThread* t=kthread_cur();
   u64* x=c->x;
   switch(imm){
@@ -698,7 +939,7 @@ static void swr_svc_(CPU* c, u32 imm){
   case 0x04: x[0]=svc_map_memory(x[0],x[1],x[2]); return;
   case 0x05: x[0]=svc_unmap_memory(x[0],x[1],x[2]); return;
   case 0x06: x[0]=svc_query(x[0],x[2]); x[1]=0; return;
-  case 0x07: process_exit(0); return;
+  case 0x07: nha_end_svc(call,c,NHA_TERMINATED); process_exit(0); return;
   case 0x08: {
     int prio=(int)(u32)x[4], core=(int)(i32)(u32)x[5];
     if(core==-2) core=default_core();
@@ -707,10 +948,9 @@ static void swr_svc_(CPU* c, u32 imm){
     LOGV("CreateThread entry=%llx stack=%llx prio=%d core=%d -> %x\n",(unsigned long long)x[1],(unsigned long long)n->stack_top,prio,core,h);
     return; }
   case 0x09: { KThread* n=(KThread*)h_get_type((u32)x[0],KO_THREAD); if(!n){ x[0]=R_BADHANDLE; return; }
-    if(n->state==0) kthread_start(n); x[0]=0; return; }
-  case 0x0A: svc_exit_thread(t); return;
-  case 0x0B: { i64 ns=(i64)x[0]; t->sleep_lr=x[30]; t->sleep_n++; memcpy(t->sleep_x,x,sizeof t->sleep_x);
-    if(ns<=0) plat_yield(); else plat_sleep_ns(ns); return; }
+    kthread_start(n); x[0]=0; return; }
+  case 0x0A: nha_end_svc(call,c,NHA_TERMINATED); svc_exit_thread(t); return;
+  case 0x0B: nha_sleep_thread(c); return;
   case 0x0C: { KThread* n=(KThread*)h_get_type((u32)x[1],KO_THREAD); if(!n){ x[0]=R_BADHANDLE; return; } x[0]=0; x[1]=(u32)n->prio; return; }
   case 0x0D: { KThread* n=(KThread*)h_get_type((u32)x[0],KO_THREAD); if(!n){ x[0]=R_BADHANDLE; return; } n->prio=(int)(u32)x[1]; x[0]=0; return; }
   case 0x0E: { KThread* n=(KThread*)h_get_type((u32)x[2],KO_THREAD); if(!n){ x[0]=R_BADHANDLE; return; } x[0]=0; x[1]=(u32)n->ideal; x[2]=n->affinity; return; }
@@ -725,29 +965,24 @@ static void swr_svc_(CPU* c, u32 imm){
     if(core>=0) n->core=core; else if(!(n->affinity>>n->core&1)) n->core=63-__builtin_clzll(n->affinity);
     x[0]=0; return; }
   case 0x10: x[0]=(u32)(t? t->core : 0); return;
-  case 0x11: { KEvent* e=(KEvent*)h_get_type((u32)x[0],KO_EVENT); if(!e){ x[0]=R_BADHANDLE; return; } kevent_signal(e); x[0]=0; return; }
-  case 0x12: case 0x17: { KObj* o=h_get((u32)x[0]); if(!o){ x[0]=R_BADHANDLE; return; }
-    if(o->type==KO_EVENT){ KEvent* e=(KEvent*)o; pm_lock(&g_klock); int was=e->signaled; e->signaled=0; pm_unlock(&g_klock);
-      x[0]= (imm==0x17 && !was)? R_BADSTATE : 0; return; }
-    x[0]=0; return; }
+  case 0x11: case 0x12: case 0x17: x[0]=svc_event((u32)x[0],imm,0); return;
   case 0x13: x[0]=svc_map_shm((u32)x[0],x[1],x[2],(u32)x[3]); return;
   case 0x14: x[0]=svc_unmap_shm((u32)x[0],x[1],x[2]); return;
   case 0x15: { KTmem* m=calloc(1,sizeof *m); m->o.type=KO_TMEM; m->o.destroy=tmem_destroy; m->o.name="tmem"; m->addr=x[1]; m->size=x[2]; m->perm=(u32)x[3];
     x[0]=0; x[1]=h_new(&m->o); return; }
   case 0x16: x[0]=((u32)x[0]==H_CUR_THREAD||(u32)x[0]==H_CUR_PROC)? 0 : (u32)h_close((u32)x[0]); return;
-  case 0x18: { u32 idx=0; u32 r=svc_wait_sync(t,x[1],(u32)x[2],(i64)x[3],&idx); x[0]=r; x[1]=idx; return; }
-  case 0x19: { KThread* n=(KThread*)h_get_type((u32)x[0],KO_THREAD); if(!n){ x[0]=R_BADHANDLE; return; }
-    pm_lock(&g_klock); if(n->wait_kind==1) wake(n,R_CANCELLED); n->cancel=1; pm_unlock(&g_klock); x[0]=0; return; }
-  case 0x1A: x[0]=svc_arbitrate_lock(t,(u32)x[0],x[1],(u32)x[2]); return;
-  case 0x1B: x[0]=svc_arbitrate_unlock(x[0]); return;
+  case 0x18: { u32 idx=0; u32 r=svc_wait_sync(t,x[1],(u32)x[2],(i64)x[3],&idx,0); x[0]=r; x[1]=idx; return; }
+  case 0x19: x[0]=svc_cancel_sync((u32)x[0]); return;
+  case 0x1A: x[0]=svc_arbitrate_lock(t,(u32)x[0],x[1],(u32)x[2],0); return;
+  case 0x1B: x[0]=svc_arbitrate_unlock(x[0],0); return;
   case 0x1C: x[0]=svc_wait_cv(t,x[0],x[1],(u32)x[2],(i64)x[3]); return;
   case 0x1D: x[0]=svc_signal_cv(x[0],(i32)(u32)x[1]); return;
   case 0x1E: x[0]=c->rt->ticks(); return;
   case 0x1F: { char name[16]={0}; memcpy(name,GP(x[1]),12);
     if(!strcmp(name,"sm:")){ SvcObj* o=svc_open("sm:"); x[0]=0; x[1]=session_new(o); return; }
     WARN("ConnectToNamedPort(%s) unknown\n",name); x[0]=R_NOTFOUND; return; }
-  case 0x21: ipc_handle(t,(u32)x[0],t->tls); return;
-  case 0x22: ipc_handle(t,(u32)x[2],x[0]); return;
+  case 0x21: ipc_handle(t,(u32)x[0],t->tls,0x100); return;
+  case 0x22: ipc_handle(t,(u32)x[2],x[0],x[1]); return;
   case 0x24: x[0]=0; x[1]=0x51; return;
   case 0x25: { KObj* o=h_get((u32)x[1]); KThread* n=(o&&o->type==KO_THREAD)? (KThread*)o : t; x[0]=0; x[1]=n->id; return; }
   case 0x26: {
@@ -766,7 +1001,7 @@ static void swr_svc_(CPU* c, u32 imm){
     return; }
   case 0x27: { u64 n=x[1]; if(n>4096) n=4096; char buf[4100]; memcpy(buf,GP(x[0]),n); buf[n]=0; LOG("[game] %s%s",buf,(n&&buf[n-1]=='\n')?"":"\n"); x[0]=0; return; }
   case 0x29: { u64 o=0; x[0]=svc_get_info((u32)x[1],(u32)x[2],x[3],&o); x[1]=o; return; }
-  case 0x2A: case 0x2B: case 0x5D: case 0x5E: case 0x5F: case 0x36: x[0]=0; return;
+  case 0x2A: case 0x2B: case 0x5D: case 0x5E: case 0x5F: case 0x36: *status=NHA_STUB; x[0]=0; return;
   case 0x2C: { u64 a=x[0], s=x[1]; if((a|s)&0xFFF){ x[0]=R_BADADDR; return; }
     /* only map the holes */
     for(u64 p=a;p<a+s;){ MemBlock b; mem_query(p,&b); u64 e=b.addr+b.size; if(e>a+s) e=a+s; if(e<=p) break;
@@ -788,7 +1023,7 @@ static void swr_svc_(CPU* c, u32 imm){
     x[0]=svc_wait_addr(t,a,(u32)x[1],(i32)(u32)x[2],(i64)x[3]); arb_note('W',t,a,(u32)x[1],(i32)(u32)x[2],(i64)x[3],(u32)x[0],b,0); return; }
   case 0x35: { u64 a=x[0]; i32 b=(a&3)? 0 : (i32)gr32(a); pm_lock(&g_klock); int nw=wl_count(4,a); pm_unlock(&g_klock);
     x[0]=svc_signal_addr(a,(u32)x[1],(i32)(u32)x[2],(i32)(u32)x[3]); arb_note('S',t,a,(u32)x[1],(i32)(u32)x[2],(i32)(u32)x[3],(u32)x[0],b,nw); return; }
-  case 0x45: { KEvent* e=kevent_new("user event",0); u32 w=h_new(&e->o), r=h_new(&e->o); x[0]=0; x[1]=w; x[2]=r; return; }
+  case 0x45: svc_create_event(c,0); return;
   case 0x4B: { x[0]=R_NOTIMPL; return; }
   case 0x6F: { /* GetSystemInfo(type, handle, subtype). newer SDKs abort on boot if this returns 0 */
     u32 ty=(u32)x[1]; u64 sub=x[3], o=0;
@@ -797,6 +1032,7 @@ static void swr_svc_(CPU* c, u32 imm){
     else if(ty==2) o= sub==0? 1 : 0x50;                                                                  /* initial process id range */
     x[0]=0; x[1]=o; return; }
   default:
+    *status=NHA_UNIMPLEMENTED;
     WARN("SVC 0x%x not implemented (pc=%llx)\n",imm,(unsigned long long)c->pc);
     x[0]=R_NOTIMPL; return;
   }

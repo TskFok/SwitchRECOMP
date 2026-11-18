@@ -2,7 +2,7 @@
    Licensed under the GNU Affero General Public License v3.0, see LICENSE.txt and NOTICE.txt.
    Forks and derived works have to keep the credit to SwitchRecomp by MZ Labs and the startup screen. */
 /* headless backend for the test runner, writes screenshots to ppm/png */
-#include "rt.h"
+#include "native_hos.h"
 static int g_maxframes=-1, g_shot_every=0; static char g_shot[1024]; static int g_shots;
 static u32* g_last; static int g_lw, g_lh; static PMutex g_hl; static u64 g_start;
 static int g_seconds=0; static u64 g_buttons_at=0, g_buttons=0;
@@ -43,7 +43,7 @@ void frontend_frame(void){
     pm_lock(&g_hl); if(g_shot[0]){ char p[1100]; snprintf(p,sizeof p,"%s.ppm",g_shot); save_ppm(p); }
     u64 h=1469598103934665603ull; if(g_last) for(int i=0;i<g_lw*g_lh;i++){ h^=g_last[i]; h*=1099511628211ull; }
     fprintf(stderr,"\nframes=%d hash=%016llx %dx%d\n",g_frames,(unsigned long long)h,g_lw,g_lh); pm_unlock(&g_hl);
-    extern void save_hints(void); save_hints(); fflush(NULL); _exit(0); }
+    extern void save_hints(void); save_hints(); nha_trace_finish(); fflush(NULL); _exit(0); }
 }
 
 #if defined(_WIN32)

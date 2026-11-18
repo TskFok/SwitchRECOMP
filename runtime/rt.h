@@ -31,10 +31,14 @@ typedef struct { pthread_mutex_t l; } PMutex;
 typedef struct { pthread_cond_t c; } PCond;
 #endif
 void pm_init(PMutex* m); void pm_lock(PMutex* m); void pm_unlock(PMutex* m);
-void pc_init(PCond* c); void pc_signal(PCond* c); void pc_broadcast(PCond* c);
+void pc_init(PCond* c); void pc_destroy(PCond* c); void pc_signal(PCond* c); void pc_broadcast(PCond* c);
 int  pc_wait(PCond* c, PMutex* m, i64 timeout_ns);     /* 0 woken, 1 timed out */
+enum { PERR_NONE, PERR_ERRNO, PERR_WIN32 };
+typedef struct { int domain; u32 code; } PError;
+
 typedef void (*PThreadFn)(void* arg);
 int  plat_thread(PThreadFn fn, void* arg, size_t stack);
+int  plat_thread_try(PThreadFn fn, void* arg, size_t stack, PError* error);
 void plat_thread_low_priority(void);
 void plat_thread_exit(void);
 void* plat_thread_self(void); void plat_thread_forget(void* h); int plat_thread_pc(void* h, u64* pc); int plat_addr_module(u64 a, char* name, int n, u64* off);
@@ -66,6 +70,20 @@ typedef struct { void* h; int first; char name[512]; int is_dir; u64 size; } PDi
 int  plat_dir_open(PDir* d, const char* path); int plat_dir_next(PDir* d); void plat_dir_close(PDir* d);
 u64  plat_file_size(const char* path);
 int  plat_pread(FILE* f, void* buf, u64 size, u64 off);
+typedef struct {
+#if defined(_WIN32)
+  HANDLE handle;
+  PMutex lock;
+#else
+  int fd;
+#endif
+} PFile;
+
+enum { PFILE_OK, PFILE_MISSING, PFILE_DENIED, PFILE_UNSUPPORTED, PFILE_INVALID, PFILE_IO };
+int plat_file_open_read(PFile* file, const char* root, const char* path, PError* error);
+int plat_file_read_at(PFile* file, void* buf, u64 size, u64 off, u64* count, PError* error);
+int plat_file_size64(PFile* file, u64* size, PError* error);
+int plat_file_close(PFile* file, PError* error);
 void plat_install_crash_handler(void);
 /* crash guard for code that runs inside the video driver (shader compiles): a crash there jumps back to
    plat_guard_set instead of closing the game. only for faults the driver didn't handle itself */
@@ -88,7 +106,7 @@ extern __thread void* tls_thread;
 
 /* ======================================================= log */
 extern int g_verbose;
-void logf_(int lvl, const char* fmt, ...);
+int logf_(int lvl, const char* fmt, ...);   /* nonzero if any selected sink failed */
 #define LOG(...)  logf_(1,__VA_ARGS__)
 #define LOGV(...) do{ if(g_verbose>=2) logf_(2,__VA_ARGS__); }while(0)
 #define WARN(...) logf_(0,__VA_ARGS__)
@@ -127,9 +145,13 @@ int  mem_map(u64 addr, u64 size, u32 state, u32 perm);           /* 0 ok */
 int  mem_unmap(u64 addr, u64 size);
 int  mem_is_free(u64 addr, u64 size);
 void mem_query(u64 addr, MemBlock* out);
+/* Keep the mapping stable until mem_access_end, only after a successful begin. */
+int mem_access_begin(u64 addr, u64 size, u32 perm);
+void mem_access_end(void);
 int  mem_set_state(u64 addr, u64 size, u32 state, u32 perm);
 int  mem_set_attr(u64 addr, u64 size, u32 mask, u32 attr);
 u64  mem_find_free(u64 lo, u64 hi, u64 size, u64 align);
+u64  kmem_try_alloc(u64 size, u32 state, u32 perm);
 u64  kmem_alloc(u64 size, u32 state, u32 perm);                   /* reserved for the kernel */
 u64  mem_heap_set(u64 size);
 extern u64 g_heap_size, g_heap_max;
@@ -183,9 +205,11 @@ typedef struct KShmem { KObj o; u64 size; u8* host; u64 gaddr; u32 perm; } KShme
 typedef struct KTmem  { KObj o; u64 addr, size; u32 perm; } KTmem;
 
 void   kernel_init(void);
+u32    h_try_new(KObj* o);             /* returns 0 on exhaustion */
 u32    h_new(KObj* o);                 /* new handle, takes a ref */
 KObj*  h_get(u32 h);                   /* no ref taken */
 KObj*  h_get_type(u32 h, int type);
+KObj*  h_ref_type(u32 h, int type);     /* lookup and take a ref under the handle lock */
 int    h_close(u32 h);
 void   kobj_ref(KObj* o);
 void   kobj_unref(KObj* o);
@@ -210,8 +234,10 @@ typedef struct { u64 addr, size; u32 flags; } IpcBuf;
 struct SvcObj;
 typedef struct IpcCtx {
   KThread* th; u8* msg; u64 msg_addr;
+  u32 msg_size, reply_size;
   u32 type; u32 cmd; u32 token;
   const u8* raw; u32 raw_size;                  /* raw args after the CMIF header */
+  u32 request_size;            /* payload bounded by the HIPC data words and message area */
   u64 pid; int has_pid;
   u32 copy_h[8], move_h[8]; int ncopy, nmove;
   IpcBuf a[MAX_BUFS], b[MAX_BUFS], w[MAX_BUFS], x[MAX_BUFS], c[MAX_BUFS]; int na, nb, nw, nx, nc;
@@ -219,6 +245,7 @@ typedef struct IpcCtx {
   int is_domain; u32 domain_obj; u32 in_objs[8]; int nin_objs; int tipc;
   /* reply */
   u32 rc;
+  int legacy_stub;
   u8 out[0x100]; u32 out_size;
   u32 out_copy[8], out_move[8]; int nout_copy, nout_move;
   struct SvcObj* out_objs[8]; int nout_objs;
@@ -233,12 +260,13 @@ typedef struct SvcObj {
   int refs;
   void* data;
   u64 u[8];
+  const char* ipc_family;
+  int nha_kind;
 } SvcObj;
 
 typedef struct KSession {
   KObj o;
   SvcObj* obj;
-  int is_domain;
   struct Domain* domain;        /* shared by cloned sessions, same as HOS */
 } KSession;
 
@@ -247,7 +275,7 @@ typedef struct Domain { SvcObj** obj; int n, cap, refs; PMutex lk; } Domain;
 SvcObj* svcobj_new(const char* name, int (*dispatch)(SvcObj*, IpcCtx*), size_t datasize);
 void    svcobj_unref(SvcObj* o);
 u32     session_new(SvcObj* obj);
-void    ipc_handle(KThread* t, u32 handle, u64 msg_addr);
+void    ipc_handle(KThread* t, u32 handle, u64 msg_addr, u64 msg_size);
 /* reading args */
 static inline u32 in32(IpcCtx* c, u32 off){ u32 v=0; if(off+4<=c->raw_size) memcpy(&v,c->raw+off,4); return v; }
 

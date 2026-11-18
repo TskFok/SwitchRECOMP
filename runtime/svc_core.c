@@ -2,7 +2,8 @@
    Licensed under the GNU Affero General Public License v3.0, see LICENSE.txt and NOTICE.txt.
    Forks and derived works have to keep the credit to SwitchRecomp by MZ Labs and the startup screen. */
 /* sm, am, set, time, acc, apm and a bunch of stub services that just say ok (nifm, shop, prepo...) */
-#include "rt.h"
+#include "native_hos.h"
+#include <errno.h>
 #include "audio.h"
 #include <math.h>
 
@@ -30,13 +31,13 @@ static SvcObj* new_sm(void){ return svcobj_new("sm:",sm_disp,0); }
 /* unknown service -> generic stub, everything succeeds */
 typedef struct { char name[16]; } GenData;
 
-static int generic_disp(SvcObj* o, IpcCtx* c){ extern int ipc_warn_once(const char*,u32); if(ipc_warn_once(((GenData*)o->data)->name,c->cmd)) WARN("  [not implemented] %s cmd %u -> ok\n",((GenData*)o->data)->name,c->cmd); return 0; }
+static int generic_disp(SvcObj* o, IpcCtx* c){ c->legacy_stub=1; extern int ipc_warn_once(const char*,u32); if(ipc_warn_once(((GenData*)o->data)->name,c->cmd)) WARN("  [not implemented] %s cmd %u -> ok\n",((GenData*)o->data)->name,c->cmd); return 0; }
 
-SvcObj* svc_generic(const char* n){ SvcObj* o=svcobj_new("generic",generic_disp,sizeof(GenData)); strncpy(((GenData*)o->data)->name,n,15); o->name=((GenData*)o->data)->name; return o; }
+SvcObj* svc_generic(const char* n){ SvcObj* o=svcobj_new("generic",generic_disp,sizeof(GenData)); strncpy(((GenData*)o->data)->name,n,15); o->name=((GenData*)o->data)->name; o->nha_kind=NHA_GENERIC; return o; }
 
 /* services that only get an empty ok. each (service, command) gets logged once, so a game stuck waiting on one of
    them shows up in the log */
-static int quiet_ok(SvcObj* o, IpcCtx* c){ static struct { const char* n; u32 cmd; } seen[96]; static int ns;
+static int quiet_ok(SvcObj* o, IpcCtx* c){ c->legacy_stub=1; static struct { const char* n; u32 cmd; } seen[96]; static int ns;
   for(int i=0;i<ns;i++) if(seen[i].n==o->name && seen[i].cmd==c->cmd) return 0;
   if(ns<96){ seen[ns].n=o->name; seen[ns].cmd=c->cmd; ns++; LOG("ipc: %s cmd %u answered empty\n",o->name,c->cmd); }
   return 0; }
@@ -490,7 +491,25 @@ static int time_disp(SvcObj* o, IpcCtx* c){
   }
   return stub_ok(o,c); }
 
-static SvcObj* new_time(void){ return svcobj_new("time",time_disp,0); }
+int nha_time_get(SvcObj* o, IpcCtx* c, NhaCall* call){
+  (void)o;
+  errno=0;
+  i64 seconds=plat_unix_time();
+  int error=errno;
+  if(seconds==-1 && error){
+    call->host_error=(PError){PERR_ERRNO,(u32)error};
+    return RC(116,200);   /* TimeNotFound */
+  }
+  out64(c,(u64)seconds);
+  return 0;
+}
+
+static SvcObj* new_time(void){
+  SvcObj* o=svcobj_new("time",time_disp,0);
+  o->ipc_family="time";
+  o->nha_kind=NHA_TIME;
+  return o;
+}
 
 /* ================================================================ acc */
 static int profile_disp(SvcObj* o, IpcCtx* c){

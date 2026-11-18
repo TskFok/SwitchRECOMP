@@ -78,20 +78,43 @@ int mem_set_attr(u64 a, u64 s, u32 mask, u32 attr){
   for(int i=0;i<nblk;i++){ MemBlock* b=&blk[i]; if(b->addr>=a && b->addr+b->size<=a+s) b->attr=(b->attr&~mask)|(attr&mask); }
   merge(); pm_unlock(&g_memlock); return 0; }
 
-void mem_query(u64 a, MemBlock* o){
-  pm_lock(&g_memlock);
-  if(a>=AS_SIZE){ o->addr=AS_SIZE; o->size=0-AS_SIZE; o->state=MS_INACCESSIBLE; o->perm=0; o->attr=o->ipc=o->dev=0; pm_unlock(&g_memlock); return; }
+static void mem_query_nl(u64 a, MemBlock* o){
+  if(a>=AS_SIZE){ o->addr=AS_SIZE; o->size=0-AS_SIZE; o->state=MS_INACCESSIBLE; o->perm=0; o->attr=o->ipc=o->dev=0; return; }
   /* blocks are sorted and don't overlap. find the last start <= a, its next block gives the same free gap as a
      full scan. the lock stays, map/unmap and permission changes can split or reallocate this array */
   int first=0,last=nblk;
   while(first<last){ int mid=first+(last-first)/2; if(blk[mid].addr<=a) first=mid+1; else last=mid; }
   u64 lo=0, hi=first<nblk?blk[first].addr:AS_SIZE;
   if(first){ MemBlock* b=&blk[first-1]; lo=b->addr+b->size;
-    if(a<lo){ *o=*b; pm_unlock(&g_memlock); return; }}
-  if(a<AS_BASE){ hi= hi<AS_BASE? hi : AS_BASE; o->addr=0; o->size=hi; o->state=MS_INACCESSIBLE; o->perm=0; o->attr=o->ipc=o->dev=0; pm_unlock(&g_memlock); return; }
+    if(a<lo){ *o=*b; return; }}
+  if(a<AS_BASE){ hi= hi<AS_BASE? hi : AS_BASE; o->addr=0; o->size=hi; o->state=MS_INACCESSIBLE; o->perm=0; o->attr=o->ipc=o->dev=0; return; }
   if(lo<AS_BASE) lo=AS_BASE;
   o->addr=lo; o->size=hi-lo; o->state=MS_FREE; o->perm=0; o->attr=o->ipc=o->dev=0;
-  pm_unlock(&g_memlock); }
+}
+
+void mem_query(u64 addr, MemBlock* out){
+  pm_lock(&g_memlock);
+  mem_query_nl(addr,out);
+  pm_unlock(&g_memlock);
+}
+
+int mem_access_begin(u64 addr, u64 size, u32 perm){
+  if(addr<AS_BASE || addr>=AS_SIZE || size>AS_SIZE-addr) return 0;
+  pm_lock(&g_memlock);
+  u64 end=addr+size;
+  for(u64 a=addr;a<end;){
+    MemBlock b;
+    mem_query_nl(a,&b);
+    if((b.perm&perm)!=perm || b.state==MS_FREE || b.state==MS_INACCESSIBLE){
+      pm_unlock(&g_memlock);
+      return 0;
+    }
+    a=b.addr+b.size;
+  }
+  return 1;
+}
+
+void mem_access_end(void){ pm_unlock(&g_memlock); }
 
 u64 mem_find_free(u64 lo, u64 hi, u64 size, u64 align){
   if(!align) align=0x1000;
@@ -110,13 +133,20 @@ u64 mem_find_free(u64 lo, u64 hi, u64 size, u64 align){
   }
   pm_unlock(&g_memlock); return a; }
 
-u64 kmem_alloc(u64 size, u32 state, u32 perm){
+u64 kmem_try_alloc(u64 size, u32 state, u32 perm){
   size=(size+0xFFF)&~0xFFFull;
   for(;;){ u64 a=mem_find_free(KERN_BASE,KERN_END,size+0x1000,0x1000);   /* + guard page */
     if(!a) break;
     int r=mem_map(a,size,state,perm); if(!r) return a;
     if(r!=-1) break;   /* -1: another thread took the range between find and map, look again */ }
-  fatal("kmem_alloc: out of memory (%llx)",(unsigned long long)size); return 0; }
+  return 0;
+}
+
+u64 kmem_alloc(u64 size, u32 state, u32 perm){
+  u64 a=kmem_try_alloc(size,state,perm);
+  if(!a) fatal("kmem_alloc: out of memory (%llx)",(unsigned long long)size);
+  return a;
+}
 
 u64 mem_heap_set(u64 size){
   /* the cap never goes below what GetInfo tells the game it has. kirby's dream buffet with memory_gb=8 asks for
