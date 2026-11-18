@@ -1,4 +1,4 @@
-# Native Horizon Adapter Phase 1
+# Native Horizon Adapter 验证
 
 Runtime 在启动时固定路由，缺省为 Legacy。设置 `SWR_NATIVE_HOS=1` 后，可以独立启用下列类别。各开关只接受 `0` 或 `1`。
 
@@ -25,7 +25,7 @@ Linux
 
 ```sh
 python3 switchrecomp.py --build-runtime --target linux --backend headless --cc gcc
-sh tests/nha/run.sh --sanitize --output bin/nha-linux-check --runtime bin/runtime_linux_headless
+sh tests/nha/run.sh --sanitize --output bin/nha-phase2-linux --runtime bin/runtime_linux_headless
 ```
 
 原生 Windows PowerShell
@@ -33,7 +33,11 @@ sh tests/nha/run.sh --sanitize --output bin/nha-linux-check --runtime bin/runtim
 ```powershell
 $env:SWR_NO_SNXVK = '1'
 python switchrecomp.py --build-runtime --target win64 --backend headless --cc gcc
-.\tests\nha\run.ps1 --output bin/nha-win64-check --runtime bin/runtime_win64_headless.exe
+.\tests\nha\run.ps1 --output bin/nha-phase2-win64 --runtime bin/runtime_win64_headless.exe
 ```
 
-两条测试命令会构建宿主合同测试，生成 NRO，并通过固定的 `713c861` 入口生成 ABI 1 模块。输出目录保存源文件、NRO、原始输入树、模块、命令、SHA-256 和运行日志。验证脚本在基线、默认 Legacy、完整 Native 和混合配置中使用同一个模块，核对 guest 结果及 trace 配对。只运行宿主合同测试时可省略 `--runtime`，仅交叉编译时可加 `--compile-only` 并指定 `--target win64 --cc x86_64-w64-mingw32-gcc`。
+两条测试命令会构建宿主契约测试，生成 NRO，并通过固定的 `713c861` 入口生成 ABI 1 模块。输出目录需要尚未创建。`fixture-manifest.json` 保存源文件、NRO、模块和初始文件的 SHA-256、编译命令、固定种子及每路的 24 个观测字段。验证脚本在基线、默认 Legacy、完整 Native 和混合配置中使用同一个模块，检查 guest 结果、输入树及 trace 配对。`host-results.json` 保存各宿主用例的退出码、故障 trace 和资源计数。原始日志保存在同一目录。
+
+只运行宿主契约测试时可省略 `--runtime`。仅交叉编译时可加 `--compile-only` 并指定 `--target win64 --cc x86_64-w64-mingw32-gcc`。Linux 的 `test_fs` 在 root 下会将实际权限拒绝记录为跳过，ASan/UBSan 运行仍会验证注入的拒绝访问和文件资源寿命。原生 Windows 应从本地 NTFS 运行，临时目录也应位于本地 NTFS，以便测量实际目录联接、分享冲突及进程句柄计数。
+
+每个已接入接口的期望、源码和测试索引见 [Phase 2 接口契约](CONTRACTS.md)。

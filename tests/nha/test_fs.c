@@ -14,6 +14,7 @@ static PFile file;
 static PMutex lock;
 static PCond done;
 static int remaining;
+static unsigned rename_cycles, safe_reads;
 static const u64 sparse_offset=0x100000003ULL;
 
 static void reader(void* arg){
@@ -61,14 +62,17 @@ static void rename_directory(void* unused){
   for(int i=0;i<300;i++){
 #if defined(_WIN32)
     if(!MoveFileA("root/live","root/parked")) continue;
-    if(MoveFileA("root/jump","root/live"))
+    if(MoveFileA("root/jump","root/live")){
       assert(MoveFileA("root/live","root/jump"));
+      rename_cycles++;
+    }
     assert(MoveFileA("root/parked","root/live"));
 #else
     assert(!rename("root/live","root/parked"));
     assert(!rename("root/jump","root/live"));
     assert(!rename("root/live","root/jump"));
     assert(!rename("root/parked","root/live"));
+    rename_cycles++;
 #endif
   }
   pm_lock(&lock);
@@ -90,11 +94,13 @@ static void check_rename_race(void){
       u64 n;
       assert(!plat_file_read_at(&opened,&byte,1,0,&n,&error) && n==1 && byte=='a');
       assert(!plat_file_close(&opened,&error));
+      safe_reads++;
     }
   }
   pm_lock(&lock);
   while(remaining) pc_wait(&done,&lock,-1);
   pm_unlock(&lock);
+  assert(rename_cycles);
 }
 
 int main(int argc, char** argv){
@@ -108,6 +114,7 @@ int main(int argc, char** argv){
   make_sparse("root/sub/sparse");
 
   PError error={0};
+  int permission_checked=0;
   u64 n=0;
   char byte;
   assert(!plat_file_open_read(&file,"root","sub/sparse",&error));
@@ -120,6 +127,10 @@ int main(int argc, char** argv){
   FILE* f=fopen("root/sparse","rb+");
   assert(f && fputc('a',f)=='a' && !fclose(f));
   assert(!plat_file_open_read(&file,"root","sparse",&error));
+  PFile shared;
+  assert(!plat_file_open_read(&shared,"root","sparse",&error));
+  assert(!plat_file_read_at(&shared,&byte,1,sparse_offset,&n,&error) && n==1 && byte=='z');
+  assert(!plat_file_close(&shared,&error));
   pm_init(&lock); pc_init(&done);
   u64 offsets[]={sparse_offset,0};
   remaining=2;
@@ -153,6 +164,7 @@ int main(int argc, char** argv){
   assert(plat_file_open_read(&file,"root","a",&error)==PFILE_DENIED);
   assert(error.domain==PERR_WIN32 && error.code==ERROR_SHARING_VIOLATION);
   assert(CloseHandle(denied));
+  permission_checked=1;
 #else
   assert(!symlink("../outside","root/jump"));
   reject("root","jump/a");
@@ -163,8 +175,12 @@ int main(int argc, char** argv){
   if(geteuid()!=0){
     assert(plat_file_open_read(&file,"root","a",&error)==PFILE_DENIED);
     assert(error.domain==PERR_ERRNO && error.code==EACCES);
+    permission_checked=1;
   }
   assert(!chmod("root/a",0600));
 #endif
+  fprintf(stderr,"NHA_TEST {\"permission_checked\":%d,\"rename_cycles\":%u,\"safe_race_reads\":%u}\n",
+          permission_checked,rename_cycles,safe_reads);
+  pc_destroy(&done);
   return 0;
 }

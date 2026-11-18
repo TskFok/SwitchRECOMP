@@ -43,7 +43,16 @@ int nha_time_get(SvcObj* obj, IpcCtx* ctx, NhaCall* call){
 }
 
 void nha_sleep_thread(CPU* c){ (void)c; native_calls++; }
-void nha_kernel_svc(CPU* c, u32 imm, NhaCall* call){ (void)c; (void)imm; (void)call; native_calls++; }
+void nha_kernel_svc(CPU* c, u32 imm, NhaCall* call){
+  native_calls++;
+  if(imm==0x09){
+    c->x[0]=0xD001;
+    call->host_error=(PError){PERR_ERRNO,EAGAIN};
+  } else {
+    assert(imm==0x18);
+    c->x[0]=0xEA01;
+  }
+}
 
 static int legacy(SvcObj* obj, IpcCtx* ctx){
   (void)obj; (void)ctx;
@@ -98,10 +107,22 @@ int main(int argc, char** argv){
   thread.cpu.x[0]=0xF601;
   nha_end_svc(&call,&thread.cpu,0);
 
+  if(!strcmp(scenario,"svc-errors")){
+    const u32 calls[]={0x09,0x18};
+    const u32 results[]={0xD001,0xEA01};
+    before=legacy_calls;
+    for(unsigned i=0;i<sizeof calls/sizeof *calls;i++){
+      if(!nha_try_svc(&thread.cpu,calls[i],&call)) legacy_calls++;
+      nha_end_svc(&call,&thread.cpu,0);
+      assert(thread.cpu.x[0]==results[i]);
+    }
+    assert(legacy_calls==before && native_calls==2);
+  }
+
   if(!strcmp(scenario,"fs")){
     mode=3;
     nha_dispatch_ipc(&fs,&ctx,&call);
-  nha_end_ipc(&call,&ctx,0);
+    nha_end_ipc(&call,&ctx,0);
     assert(ctx.rc==0 && legacy_calls==before+1 && native_calls==1);
     assert(strstr(trace,"\"reason\":\"legacy_mount_or_mode\""));
   }

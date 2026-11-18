@@ -11,6 +11,9 @@ close use one backend for the object's lifetime. SWR_NATIVE_APIS accepts
 comma-separated per-operation choices (for example, svc.0x1e=native).
 SWR_NATIVE_TRACE=1 logs versioned JSON records with route decisions, guest
 results and host errors. See tests/nha/README.md for scopes and verification.
+The NHA contracts compare the same ABI 1 fixture across baseline, Legacy,
+Native and mixed routing. Host tests verify injected failures, guest results,
+trace records, and resource cleanup.
 
 VULKAN RENDERER (TEST)
 F1 has a new Renderer row: OpenGL or Vulkan. Changing it saves renderer= in the game's .ini and
