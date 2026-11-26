@@ -4,6 +4,7 @@
 /* HLE kernel: handles, objects, guest threads (1:1 with host threads), sync (events, mutex/condvar, address
    arbiter) and the SVCs games really call */
 #include "native_hos.h"
+#include "audio.h"
 #include <errno.h>
 
 PMutex g_klock;
@@ -231,9 +232,16 @@ void kernel_run_main(u64 entry, u64 stack_size, int prio, int core){
 }
 
 void process_exit(int code){
-  g_exiting=1; LOG("The game exited (code %d)\n",code);
+  if(__atomic_exchange_n(&g_exiting,1,__ATOMIC_ACQ_REL)) plat_thread_exit();
+  LOG("The game exited (code %d)\n",code);
   nha_trace_finish();
+#if defined(_WIN32)
   fflush(NULL); exit(code);
+#else
+  /* The GL workers can still be using Mesa when its exit handlers run. */
+  swr_audio_shutdown();
+  fflush(NULL); _exit(code);
+#endif
 }
 
 /* ============================================================ kernel mutex arbitration */

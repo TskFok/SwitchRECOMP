@@ -19,9 +19,10 @@ From the `SwitchRecomp` folder:
 
 ```sh
 for t in "linux x11 gcc" "win64 win32 x86_64-w64-mingw32-gcc" "linux headless gcc" "win64 headless x86_64-w64-mingw32-gcc"; do
-  set -- $t; python3 switchrecomp.py --build-runtime --target $1 --backend $2 --cc $3 2>&1 | grep -E "error|Done"
+  set -- $t
+  python3 switchrecomp.py --build-runtime --target "$1" --backend "$2" --cc "$3" || exit "$?"
 done
-tool/build_tool.sh SwitchRecomp.exe && tool/build_tool_linux.sh SwitchRecomp.bin
+sh tool/build_tool.sh SwitchRecomp.exe && sh tool/build_tool_linux.sh SwitchRecomp.bin
 ```
 
 Pass when:
@@ -51,9 +52,10 @@ Small Switch homebrew programs, each drawing one thing the runtime has broken be
 and run under Xvfb for 3 seconds. The last frame is saved and compared pixel by pixel with the same program under
 the last good runtime.
 
-**The test programs are not in the package.** They were lost and have to be rebuilt (devkitPro with deko3d,
-then recompiled with SwitchRecomp). Each one goes in its own folder under `tests/regress/programs/<name>/`, like a
-game folder (`<name>_code.so`, `<name>_data/`). The set used for v190:
+Build the repository-owned [clear and present sample](tests/regress/clear_present.c) using the
+[Phase 4 instructions](docs/nha/phase4.md). The historical suite requires additional authorized sources.
+Build each sample with devkitPro and deko3d, then recompile it with SwitchRecomp into a folder under
+`tests/regress/programs/<name>/` containing `<name>_code.so` and `<name>_data/`. The historical v190 suite:
 
 | Folder | Covers |
 | --- | --- |
@@ -81,15 +83,18 @@ Rebuilding a set like this is the first thing to do before more GPU changes. Add
 
 ```sh
 # once, with the last runtime known to be good: the baseline
-tests/regress/regrun.sh path/to/good/runtime_linux_x11 base
+bash tests/regress/regrun.sh path/to/good/runtime_linux_x11 base &&
 # with the new runtime
-tests/regress/regrun.sh bin/runtime_linux_x11 new
+bash tests/regress/regrun.sh bin/runtime_linux_x11 new &&
 python3 tests/regress/cmpreg.py new base
 ```
 
-Needs `Xvfb` and Mesa (the software renderer is enough). `regrun.sh` prints the frame count and image hash of each
-program. `cmpreg.py` prints `same`, `DIFFERENT n pixels` or `NO IMAGE` (crashed or never presented: read
-`new.out` in that folder).
+Needs `xvfb-run`, `Xvfb`, `xauth` and Mesa (the software renderer is enough). Both scripts require at least one
+sample, take an optional third argument for the program directory, and return a failure status for an empty
+suite. Compare the reported sample count against the expected set before accepting the result.
+`regrun.sh` saves each process exit code in `<tag>.exit` and requires a capture with a positive frame count.
+`cmpreg.py` reports matching pixels, pixel differences, invalid Runtime exits, and missing or malformed images.
+Check `<tag>.out` when a capture fails.
 
 Known noise: `dmaout` always differs (it draws timing-dependent data), and `deko_examples` differs on some runs. Run
 any other difference twice. If it persists, it's a regression: open both `.ppm` images and the program's log, and

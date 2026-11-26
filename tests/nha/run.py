@@ -204,6 +204,7 @@ def check_trace(log, expected_native):
         else:
             raise ValueError(f"Invalid trace sequence for call {call_id} in {log}")
     if (not summary or not begin or begin.keys() != end.keys() or summary["calls"] != len(end)
+            or sorted(end) != list(range(1, len(end) + 1))
             or any(summary[k] for k in ("incomplete_calls", "dropped_records", "truncated_ids"))):
         raise ValueError(f"Incomplete trace in {log}")
     for call_id, last in end.items():

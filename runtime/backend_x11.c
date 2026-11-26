@@ -5,7 +5,7 @@
    controllers come from SDL2, loaded at run time like XInput on windows. F1 help F3 screenshot F4 fps limit F5
    trace F8 full res screenshot F11/Alt+Enter fullscreen Esc quit. the Xvfb tests run on this too (screenshots,
    scripted input) */
-#include "rt.h"
+#include "native_hos.h"
 #include <X11/Xlib.h>
 #include <X11/Xutil.h>
 #include <X11/Xatom.h>
@@ -243,7 +243,7 @@ void frontend_frame(void){
   if((g_maxframes>=0 && g_frames>=g_maxframes) || (g_seconds && el>=(u64)g_seconds*1000000000ull)){
     u64 h=gpu_gl_screenshot(g_shot[0]? g_shot : NULL);
     fprintf(stderr,"\nframes=%d hash=%016llx\n",g_frames,(unsigned long long)h);
-    extern void save_hints(void); save_hints(); fflush(NULL); _exit(0); }
+    extern void save_hints(void); save_hints(); nha_trace_finish(); fflush(NULL); _exit(0); }
 }
 
 int backend_glq_ok(void){ return 1; }   /* GL calls go through glq */

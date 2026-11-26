@@ -17,6 +17,12 @@ trace records, and resource cleanup.
 The NHA interface inventory and tests/nha/report.py correlate fixture traces
 with static dependencies, report missing evidence, and list candidates for
 review in narrowly scoped Runtime builds.
+The saved ABI 1 fixture can be replayed with default routing, full Native
+routing and individual SWR_NATIVE_APIS overrides using tests/nha/compare_runtime.py.
+Linux guest exit closes audio and flushes the trace before the process exits,
+avoiding Mesa shutdown while OpenGL workers are still active. X11 and Win32
+timed test runs write the trace summary. The GPU regression runner fails on
+missing captures and empty suites. See docs/nha/phase4.md for the results.
 
 VULKAN RENDERER (TEST)
 F1 has a new Renderer row: OpenGL or Vulkan. Changing it saves renderer= in the game's .ini and

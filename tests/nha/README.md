@@ -1,5 +1,7 @@
 # Native Horizon Adapter 验证
 
+复用 Phase 1 ABI 1 模块逐项核对当前 Runtime 路由的命令见 [Phase 4 集成与回归](../../docs/nha/phase4.md#重跑-abi-1-矩阵)。
+
 Runtime 在启动时固定路由，缺省为 Legacy。设置 `SWR_NATIVE_HOS=1` 后，可以独立启用下列类别。各开关只接受 `0` 或 `1`。
 
 | 开关 | 接入范围 |

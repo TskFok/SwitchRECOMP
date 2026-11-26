@@ -317,7 +317,8 @@ def build_report(inventory_path, manifest_path, trace_paths=None):
             "api_count": len(interfaces), "registered_service_count": len(inventory["registered_services"]),
         },
         "sample": {k: manifest[k] for k in (
-            "authoring", "baseline", "runtime_commit", "seed", "host", "target", "backend", "cc",
+            "authoring", "baseline", "runtime_commit", "runtime_patch_sha256", "seed",
+            "host", "host_settings", "launcher", "target", "backend", "cc",
             "source_sha256", "nro_sha256", "module", "module_sha256", "ini_sha256", "initial_files",
         ) if k in manifest},
         "runs": runs,

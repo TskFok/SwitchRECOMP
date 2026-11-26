@@ -3,7 +3,7 @@
    Forks and derived works have to keep the credit to SwitchRecomp by MZ Labs and the startup screen. */
 /* win32 backend: window, WGL, keyboard, XInput.
    F1 help  F3 screenshot  F4 fps limit  F11 fullscreen  Esc quit */
-#include "rt.h"
+#include "native_hos.h"
 #include "audio.h"
 #include <windows.h>
 #include <math.h>
@@ -427,7 +427,8 @@ void frontend_frame(void){
     snprintf(p,sizeof p,"captures/screenshot_%04d%02d%02d_%02d%02d%02d",t.wYear,t.wMonth,t.wDay,t.wHour,t.wMinute,t.wSecond); gpu_gl_screenshot(p); }
   if(g_seconds && plat_ns()-g_start>=(u64)g_seconds*1000000000ull){
     u64 h=gpu_gl_screenshot(g_shot[0]? g_shot : NULL); fprintf(stderr,"\nframes=%d hash=%016llx\n",g_frames,(unsigned long long)h);
-    extern void save_hints(void); save_hints(); { extern void gpu_gl_rec_finish(void); gpu_gl_rec_finish(); } fflush(NULL); { extern volatile int g_exit_logged; g_exit_logged=1; } ExitProcess(0); }
+    extern void save_hints(void); save_hints(); { extern void gpu_gl_rec_finish(void); gpu_gl_rec_finish(); }
+    nha_trace_finish(); fflush(NULL); { extern volatile int g_exit_logged; g_exit_logged=1; } ExitProcess(0); }
 }
 
 int backend_glq_ok(void){ return 1; }   /* GL calls go through glq */

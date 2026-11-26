@@ -117,7 +117,7 @@ static void audio_output_worker(void* unused){
   }
   __atomic_store_n(&worker_running,0,__ATOMIC_RELEASE);
 }
-static void audio_shutdown(void){
+void swr_audio_shutdown(void){
   __atomic_store_n(&host_stop,1,__ATOMIC_RELEASE);
   while(__atomic_load_n(&worker_running,__ATOMIC_ACQUIRE)) plat_sleep_ns(1000000);
   pm_lock(&host_lock); device_close(); pm_unlock(&host_lock);
@@ -133,7 +133,7 @@ void swr_audio_init(void){
       WARN("audio: output worker could not start, using synchronous playback\n");
     } else LOG("audio: lossless output queue, adaptive smooth slowdown enabled (F1)\n");
   }
-  atexit(audio_shutdown);
+  atexit(swr_audio_shutdown);
 }
 void swr_audio_submit_at(const float* samples,unsigned frames,u64 sample_end){
   if(!frames || frames>SWR_AUDIO_FRAMES || audio_stopping()) return;

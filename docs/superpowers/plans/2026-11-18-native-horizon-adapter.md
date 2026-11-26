@@ -90,10 +90,12 @@
 
 - [ ] 按审计文档的四条命令编译并运行 Linux x11/headless、Windows win32/headless。每个目标运行默认、完整 opt-in 和单接口切换。记录编译器、host、构建配置、样本来源、退出码及 trace 差异。Windows 目标在 Windows 实机或虚拟机执行，交叉构建单独记录。用 Phase 1 保存的基线 ABI 1 模块验证可直接替换 Runtime。
 - [ ] 执行 `REGRESSION.md` Level 0 的构建和包检查，按适用性运行 `sh tests/run_audio.sh`。重建并验证已授权 GPU 样本数量，以 `regrun.sh BASE_RUNTIME base`、`regrun.sh NEW_RUNTIME new` 和 `python3 tests/regress/cmpreg.py new base` 做 Level 2 对照。对窗口启动、音频就绪、VSync、GL、headless 帧数和 Windows 可选 Vulkan 保留证据。
-- [ ] Level 3/4 只使用权限已确认的输入和可用硬件。Windows Intel 场景需要实际设备证据；缺授权样本或硬件时明确登记为未覆盖。Windows Vulkan 的许可条件独立核对，保留 `SWR_NO_SNXVK=1` 的基线结果。
-- [ ] 对 ABI、guest RC、句柄、同步、状态、trace 和性能波动分类，修复或记录偏差，再复跑相关目标。把重要行为及开关写入英文 `CHANGELOG_v190.txt`。
+- [x] Level 3/4 只使用权限已确认的输入和可用硬件。Windows Intel 场景需要实际设备证据；缺授权样本或硬件时明确登记为未覆盖。Windows Vulkan 的许可条件独立核对，保留 `SWR_NO_SNXVK=1` 的基线结果。
+- [x] 对 ABI、guest RC、句柄、同步、状态、trace 和性能波动分类，修复或记录偏差，再复跑相关目标。把重要行为及开关写入英文 `CHANGELOG_v190.txt`。
 
 **交付及验收**　提交源码补丁、构建命令、测试源码、真实退出状态、差异报告和未支持接口清单。四目标默认路由和已进入 Native 的接口均完成对照，兼容性结论与单个程序能否启动分别报告。
+
+**2026-11-26 验证记录**　四目标构建通过，Linux x11 和 headless 的 ABI 1 路由矩阵通过。Level 0 的正式版版本标识、原生 Windows 运行、历史 GPU 样本仍有缺口。退出状态、兼容层证据、自有 GPU 样本与剩余验证见 [Phase 4 集成报告](../../nha/phase4.md)。
 
 ## Phase 5　发布前审计
 
