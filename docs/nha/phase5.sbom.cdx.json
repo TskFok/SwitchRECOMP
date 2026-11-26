@@ -1,0 +1,1517 @@
+{
+  "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "serialNumber": "urn:uuid:a977d677-9144-5535-b75c-df9e3838bec5",
+  "metadata": {
+    "lifecycles": [
+      {
+        "phase": "post-build"
+      }
+    ],
+    "component": {
+      "type": "application",
+      "bom-ref": "phase5",
+      "name": "SwitchRecomp Phase 4 test artifacts",
+      "version": "dcd2c9fdfda1ceac78230b9cd01388a80196ae9d"
+    },
+    "properties": [
+      {
+        "name": "swr:audit_date",
+        "value": "2026-11-26"
+      },
+      {
+        "name": "swr:release_disposition",
+        "value": "blocked"
+      },
+      {
+        "name": "swr:compliance_report",
+        "value": "docs/nha/phase5.md"
+      },
+      {
+        "name": "swr:baseline",
+        "value": "713c8618689afb26b904673a0f2f9901eb6baf7b"
+      }
+    ]
+  },
+  "components": [
+    {
+      "type": "file",
+      "bom-ref": "project-source",
+      "name": "SwitchRecomp repository snapshot",
+      "version": "dcd2c9fdfda1ceac78230b9cd01388a80196ae9d",
+      "licenses": [
+        {
+          "license": {
+            "id": "AGPL-3.0-only"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "dfd9ee3f49bdf38bdfd0232e24e965a12fda1cb8086039a248952227c14e7295"
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:bytes",
+          "value": "1800220"
+        },
+        {
+          "name": "swr:excludes",
+          "value": "SDL 构建输入和源包、编译器运行库来源、包组装记录及发布渠道的源码提供证据"
+        },
+        {
+          "name": "swr:includes",
+          "value": "仓库源码快照，第三方源码各自保留许可"
+        },
+        {
+          "name": "swr:path",
+          "value": "bin/nha-phase5/switchrecomp-dcd2c9f-source.tar.gz"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "recompiler",
+      "name": "SwitchRecomp Python recompiler",
+      "version": "dcd2c9fdfda1ceac78230b9cd01388a80196ae9d",
+      "licenses": [
+        {
+          "license": {
+            "id": "AGPL-3.0-only"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:source",
+          "value": "switchrecomp.py; a64.py; codegen.py; nxloader.py; brt.py; tools_sym.py"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "texture2ddecoder",
+      "name": "texture2ddecoder",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:provenance",
+          "value": "仓库内快照，未核实上游版本"
+        },
+        {
+          "name": "swr:source",
+          "value": "runtime/bcn/{bcn.cpp,bcdec.cpp,LICENSE_texture2ddecoder.txt}"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "fp16",
+      "name": "FP16",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:provenance",
+          "value": "仓库内快照，未核实上游版本"
+        },
+        {
+          "name": "swr:source",
+          "value": "runtime/bcn/fp16.h; runtime/bcn/fp16/"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "endianness",
+      "name": "endianness.h",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:provenance",
+          "value": "仓库内快照，未核实上游版本"
+        },
+        {
+          "name": "swr:source",
+          "value": "runtime/bcn/endianness.h"
+        }
+      ]
+    },
+    {
+      "type": "data",
+      "bom-ref": "barlow",
+      "name": "Barlow Semi Condensed",
+      "version": "1.408",
+      "licenses": [
+        {
+          "license": {
+            "id": "OFL-1.1"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:source",
+          "value": "tool/fonts/BarlowSemiCondensed-Medium.ttf; tool/fonts/OFL-Barlow.txt"
+        }
+      ]
+    },
+    {
+      "type": "data",
+      "bom-ref": "hind",
+      "name": "Hind",
+      "version": "2.001",
+      "licenses": [
+        {
+          "license": {
+            "id": "OFL-1.1"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:source",
+          "value": "tool/fonts/Hind-{Regular,Medium,SemiBold}.ttf; tool/fonts/OFL-Hind.txt"
+        }
+      ]
+    },
+    {
+      "type": "data",
+      "bom-ref": "hind-embedded",
+      "name": "Hind Regular embedded subset",
+      "version": "2.001",
+      "licenses": [
+        {
+          "license": {
+            "id": "OFL-1.1"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "dd2a76fa8cb62629ebe8e52356fcf1972c577c64156e23b67294b2f165b54048"
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:bytes",
+          "value": "19692"
+        },
+        {
+          "name": "swr:provenance",
+          "value": "字体 name 表与两个 Windows Runtime 内的字节已核对，子集生成依据待复核"
+        },
+        {
+          "name": "swr:source",
+          "value": "runtime/swkbd_font.h"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "dr_wav",
+      "name": "dr_wav",
+      "version": "0.14.6",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT-0 或源码内的公有领域声明"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:source",
+          "value": "tool/audio_decode/dr_wav.h"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "dr_mp3",
+      "name": "dr_mp3",
+      "version": "0.7.4",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT-0 或源码内的公有领域声明"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:source",
+          "value": "tool/audio_decode/dr_mp3.h"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "stb_vorbis",
+      "name": "stb_vorbis",
+      "version": "1.22",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT 或源码内的公有领域声明"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:source",
+          "value": "tool/audio_decode/stb_vorbis.c"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "gcc-linux",
+      "name": "Debian GCC runtime objects",
+      "version": "12.2.0-14+deb12u1",
+      "licenses": [
+        {
+          "license": {
+            "name": "GPL-3.0-or-later WITH GCC-exception-3.1"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:source",
+          "value": "GCC libgcc.a，适用成员由链接 map 确认"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "glibc-linux",
+      "name": "Debian glibc",
+      "version": "2.36-9+deb12u14",
+      "licenses": [
+        {
+          "license": {
+            "name": "LGPL-2.1-or-later 为主，另有按文件的许可"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:source",
+          "value": "libc.so.6; libm.so.6; Runtime 链接成员另见 libc_nonshared.a"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "gcc-windows",
+      "name": "Debian MinGW-target GCC runtime objects",
+      "version": "12.2.0-14+deb12u1+25.2+b1",
+      "licenses": [
+        {
+          "license": {
+            "name": "GPL-3.0-or-later WITH GCC-exception-3.1"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:source",
+          "value": "libgcc.a; Runtime 另有 libgcc_eh.a"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "mingw-crt",
+      "name": "MinGW-w64 CRT and Windows import libraries",
+      "version": "10.0.0-3",
+      "licenses": [
+        {
+          "license": {
+            "name": "按文件的 MinGW-w64 许可及例外，见发行版版权记录"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:source",
+          "value": "Windows 各目标的 libmingw32.a、libmingwex.a 及系统 DLL 导入库"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "winpthreads",
+      "name": "MinGW-w64 winpthreads",
+      "version": "10.0.0-3",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT 与 BSD 署名条款，需按发行版对应文件保留"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:source",
+          "value": "Windows 两 Runtime 的 libpthread.a(libwinpthread_la-*.o)"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "x11-host",
+      "name": "Debian libX11",
+      "version": "2:1.8.4-2+deb12u2",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT/X11 系列按文件许可"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:distribution",
+          "value": "宿主"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "gl-host",
+      "name": "Debian libGL (GLVND)",
+      "version": "1.6.0-1",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:distribution",
+          "value": "宿主"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "sdl-linux",
+      "name": "libsdl2-2.0-0",
+      "version": "2.26.5+dfsg-1",
+      "licenses": [
+        {
+          "license": {
+            "name": "Zlib 为主，Debian copyright 涵盖其他文件许可"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "72457d21f5a6874e98a89b537ea96a8f7204399a3938dc2a0e41f2a82ed44a59"
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:archive_entry",
+          "value": "SwitchRecomp/lib/libSDL2-2.0.so.0"
+        },
+        {
+          "name": "swr:bytes",
+          "value": "1862400"
+        },
+        {
+          "name": "swr:debian_copyright",
+          "value": "/usr/share/doc/libsdl2-2.0-0/copyright; SHA-256 15e295dc35b140eee68684d296769df30223b9fd30f3244979899cc4affa5e2a"
+        },
+        {
+          "name": "swr:elf_needed",
+          "value": "libasound.so.2,libm.so.6,libpulse.so.0,libsamplerate.so.0,libX11.so.6,libXext.so.6,libXcursor.so.1,libXi.so.6,libXfixes.so.3,libXrandr.so.2,libXss.so.1,libdrm.so.2,libgbm.so.1,libwayland-egl.so.1,libwayland-client.so.0,libwayland-cursor.so.0,libxkbcommon.so.0,libdecor-0.so.0,libc.so.6,ld-linux-aarch64.so.1"
+        },
+        {
+          "name": "swr:path",
+          "value": "bin/nha-phase5/binaries/libSDL2-2.0.so.0"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "image-linux",
+      "name": "libsdl2-image-2.0-0",
+      "version": "2.6.3+dfsg-1",
+      "licenses": [
+        {
+          "license": {
+            "name": "Zlib 为主，Debian copyright 涵盖其他文件许可"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "dc9114aeb1a26c5bea32f7a9b58874e7bfad87c19d39a7628bf7d2b65dddbce1"
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:archive_entry",
+          "value": "SwitchRecomp/lib/libSDL2_image-2.0.so.0"
+        },
+        {
+          "name": "swr:bytes",
+          "value": "132968"
+        },
+        {
+          "name": "swr:debian_copyright",
+          "value": "/usr/share/doc/libsdl2-image-2.0-0/copyright; SHA-256 d28a8f2de75faa0b3760459c36dc04df2d0d143331c9e60fb60a464136104167"
+        },
+        {
+          "name": "swr:elf_needed",
+          "value": "libpng16.so.16,libjpeg.so.62,libtiff.so.6,libwebp.so.7,libSDL2-2.0.so.0,libc.so.6,ld-linux-aarch64.so.1"
+        },
+        {
+          "name": "swr:path",
+          "value": "bin/nha-phase5/binaries/libSDL2_image-2.0.so.0"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "ttf-linux",
+      "name": "libsdl2-ttf-2.0-0",
+      "version": "2.20.1+dfsg-2",
+      "licenses": [
+        {
+          "license": {
+            "name": "Zlib 为主，Debian copyright 涵盖其他文件许可"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "85c90293c8d0ba6441c1dd3ad3e3ecee8186c132bfbce9bee14a5e2abf08f6cd"
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:archive_entry",
+          "value": "SwitchRecomp/lib/libSDL2_ttf-2.0.so.0"
+        },
+        {
+          "name": "swr:bytes",
+          "value": "67360"
+        },
+        {
+          "name": "swr:debian_copyright",
+          "value": "/usr/share/doc/libsdl2-ttf-2.0-0/copyright; SHA-256 4bbfe6700da214208af3c6aa54af202f4fc6b36766e7ea6476bba26f2c0fdf48"
+        },
+        {
+          "name": "swr:elf_needed",
+          "value": "libfreetype.so.6,libharfbuzz.so.0,libSDL2-2.0.so.0,libc.so.6,ld-linux-aarch64.so.1"
+        },
+        {
+          "name": "swr:path",
+          "value": "bin/nha-phase5/binaries/libSDL2_ttf-2.0.so.0"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "sdl-windows",
+      "name": "SDL2",
+      "version": "2.30.9",
+      "licenses": [
+        {
+          "license": {
+            "name": "Zlib 为主，含附带第三方许可"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "ef731b5e661203ed13bdbc588b02c3f8b1d2cdfa8d690782a4bade261e491896"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "source-distribution",
+          "url": "https://github.com/libsdl-org/SDL/releases/tag/release-2.30.9"
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:archive_sha256",
+          "value": "b188d165dc4a0372042bff3d0c18e9bb90772581e92a7b8b47b521b47714f75c"
+        },
+        {
+          "name": "swr:distribution",
+          "value": "静态链接到 Windows GUI"
+        },
+        {
+          "name": "swr:member_file",
+          "value": "SDL2-2.30.9/x86_64-w64-mingw32/lib/libSDL2.a"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "image-windows",
+      "name": "SDL2_image",
+      "version": "2.8.2",
+      "licenses": [
+        {
+          "license": {
+            "name": "Zlib 为主，含附带第三方许可"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "8a3acce82f140940f2c329ec7f1c66680fa1f6b0bd8ec04719a4eead2dec6247"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "source-distribution",
+          "url": "https://github.com/libsdl-org/SDL2_image/releases/tag/release-2.8.2"
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:archive_sha256",
+          "value": "9dc1348c36d94cbbd4702dd2f2e6ba151b9c835eb13d55ec6c03a9c2cb9b7748"
+        },
+        {
+          "name": "swr:distribution",
+          "value": "静态链接到 Windows GUI"
+        },
+        {
+          "name": "swr:member_file",
+          "value": "SDL2_image-2.8.2/x86_64-w64-mingw32/lib/libSDL2_image.a"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "ttf-windows",
+      "name": "SDL2_ttf",
+      "version": "2.22.0",
+      "licenses": [
+        {
+          "license": {
+            "name": "Zlib 为主，含附带第三方许可"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "b7620d022495174053f9fdf4a7649ab5ef3f0686393f632a4c222a8a61c95558"
+        }
+      ],
+      "externalReferences": [
+        {
+          "type": "source-distribution",
+          "url": "https://github.com/libsdl-org/SDL2_ttf/releases/tag/release-2.22.0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:archive_sha256",
+          "value": "7e3edf46630bbfb1cb8bffd69a5456b037469ed7a20a75232caee0b1752dc65b"
+        },
+        {
+          "name": "swr:distribution",
+          "value": "静态链接到 Windows GUI"
+        },
+        {
+          "name": "swr:member_file",
+          "value": "SDL2_ttf-2.22.0/x86_64-w64-mingw32/lib/libSDL2_ttf.a"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "freetype-windows",
+      "name": "FreeType",
+      "version": "2.13.2",
+      "licenses": [
+        {
+          "license": {
+            "name": "FTL 或 GPL-2.0-or-later，需确认发布选用条款和附带文件许可"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:source",
+          "value": "libSDL2_ttf.a，PE 版本由 FT_New_Library 的版本字段验证"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "harfbuzz-windows",
+      "name": "HarfBuzz",
+      "version": "8.1.1",
+      "licenses": [
+        {
+          "license": {
+            "name": "MIT 为主，需补齐对应版本的版权记录"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:source",
+          "value": "libSDL2_ttf.a，PE 版本由 hb_version 验证"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "runtime-linux-x11",
+      "name": "runtime_linux_x11",
+      "version": "v190 test",
+      "licenses": [
+        {
+          "license": {
+            "id": "AGPL-3.0-only"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "36faf3d29ebde12262c7f288a08f55afaa0528c71ffe3d22d01957ac42bcc71d"
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:archive_entry",
+          "value": "SwitchRecomp/bin/runtime_linux_x11"
+        },
+        {
+          "name": "swr:bytes",
+          "value": "910600"
+        },
+        {
+          "name": "swr:dlopen",
+          "value": "SDL2"
+        },
+        {
+          "name": "swr:elf_needed",
+          "value": "libm.so.6,libX11.so.6,libGL.so.1,libc.so.6"
+        },
+        {
+          "name": "swr:link_archives",
+          "value": "libc_nonshared.a,libgcc.a"
+        },
+        {
+          "name": "swr:link_map_sha256",
+          "value": "c0554376774ddfb5ef8844a4f2adcc14b305554fdebe5705ab4ba32b413dbee4"
+        },
+        {
+          "name": "swr:path",
+          "value": "bin/nha-phase5/binaries/runtime_linux_x11"
+        },
+        {
+          "name": "swr:runtime_options",
+          "value": "SWR_NO_SNXVK=1; 5 个可选静态库均未链接"
+        },
+        {
+          "name": "swr:target",
+          "value": "linux-aarch64-x11"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "runtime-linux-headless",
+      "name": "runtime_linux_headless",
+      "version": "v190 test",
+      "licenses": [
+        {
+          "license": {
+            "id": "AGPL-3.0-only"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "ae6caec5585442385f2327f3365d007aafbdbf34f80cc00bb91832deae941ac9"
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:archive_entry",
+          "value": "SwitchRecomp/bin/runtime_linux_headless"
+        },
+        {
+          "name": "swr:bytes",
+          "value": "376152"
+        },
+        {
+          "name": "swr:dlopen",
+          "value": "SDL2"
+        },
+        {
+          "name": "swr:elf_needed",
+          "value": "libm.so.6,libc.so.6"
+        },
+        {
+          "name": "swr:link_archives",
+          "value": "libc_nonshared.a,libgcc.a"
+        },
+        {
+          "name": "swr:link_map_sha256",
+          "value": "fb26568c220d903e1cc2aaf7874ea931565da91bfdd782601dfe163d3388e30a"
+        },
+        {
+          "name": "swr:path",
+          "value": "bin/nha-phase5/binaries/runtime_linux_headless"
+        },
+        {
+          "name": "swr:runtime_options",
+          "value": "SWR_NO_SNXVK=1; 5 个可选静态库均未链接"
+        },
+        {
+          "name": "swr:target",
+          "value": "linux-aarch64-headless"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "runtime-win32-gl",
+      "name": "runtime_win64_win32.exe",
+      "version": "v190 test",
+      "licenses": [
+        {
+          "license": {
+            "id": "AGPL-3.0-only"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "cb21dd3e8f2949309b5820af90546a1bf489862fb3308dc1f37192d7bd07ab91"
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:archive_entry",
+          "value": "SwitchRecomp/bin/runtime_win64_win32.exe"
+        },
+        {
+          "name": "swr:bytes",
+          "value": "1213627"
+        },
+        {
+          "name": "swr:link_archives",
+          "value": "libgcc.a,libgcc_eh.a,libgdi32.a,libkernel32.a,libmfplat.a,libmfreadwrite.a,libmingw32.a,libmingwex.a,libmsvcrt.a,libole32.a,libopengl32.a,libpthread.a,libuser32.a,libwinmm.a"
+        },
+        {
+          "name": "swr:link_map_sha256",
+          "value": "20439ef2e32d413ec693aa68a1399aaf59f35e40119e51ee28166d9fb348a7e1"
+        },
+        {
+          "name": "swr:path",
+          "value": "bin/nha-phase5/binaries/runtime_win64_win32.exe"
+        },
+        {
+          "name": "swr:pe_imports",
+          "value": "GDI32.dll,KERNEL32.dll,MFPlat.DLL,MFReadWrite.dll,msvcrt.dll,ole32.dll,OPENGL32.dll,USER32.dll,WINMM.dll"
+        },
+        {
+          "name": "swr:runtime_options",
+          "value": "SWR_NO_SNXVK=1; 5 个可选静态库均未链接"
+        },
+        {
+          "name": "swr:target",
+          "value": "windows-x86_64-win32-opengl"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "runtime-windows-headless",
+      "name": "runtime_win64_headless.exe",
+      "version": "v190 test",
+      "licenses": [
+        {
+          "license": {
+            "id": "AGPL-3.0-only"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "6251adf2b60c5aa90bc5d17d25a4853e2abd79e108c26449aa85337cc380e911"
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:archive_entry",
+          "value": "SwitchRecomp/bin/runtime_win64_headless.exe"
+        },
+        {
+          "name": "swr:bytes",
+          "value": "483017"
+        },
+        {
+          "name": "swr:link_archives",
+          "value": "libgcc.a,libgcc_eh.a,libgdi32.a,libkernel32.a,libmingw32.a,libmingwex.a,libmsvcrt.a,libopengl32.a,libpthread.a,libuser32.a,libwinmm.a"
+        },
+        {
+          "name": "swr:link_map_sha256",
+          "value": "5bc6f38ee9814685082387a0668f8763d69f38180887191ad8468c682ea8d5ad"
+        },
+        {
+          "name": "swr:path",
+          "value": "bin/nha-phase5/binaries/runtime_win64_headless.exe"
+        },
+        {
+          "name": "swr:pe_imports",
+          "value": "GDI32.dll,KERNEL32.dll,msvcrt.dll,OPENGL32.dll,USER32.dll,WINMM.dll"
+        },
+        {
+          "name": "swr:runtime_options",
+          "value": "SWR_NO_SNXVK=1; 5 个可选静态库均未链接"
+        },
+        {
+          "name": "swr:target",
+          "value": "windows-x86_64-headless"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "gui-linux",
+      "name": "SwitchRecomp.bin",
+      "version": "v190",
+      "licenses": [
+        {
+          "license": {
+            "id": "AGPL-3.0-only"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "b5e212aedbd002a34f30941376d36413964b5e801b9613166e55febc23fbcf2e"
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:archive_entry",
+          "value": "SwitchRecomp/SwitchRecomp.bin"
+        },
+        {
+          "name": "swr:bytes",
+          "value": "367000"
+        },
+        {
+          "name": "swr:elf_needed",
+          "value": "libSDL2_ttf-2.0.so.0,libSDL2_image-2.0.so.0,libSDL2-2.0.so.0,libm.so.6,libc.so.6"
+        },
+        {
+          "name": "swr:link_archives",
+          "value": "libgcc.a"
+        },
+        {
+          "name": "swr:link_map_sha256",
+          "value": "2cf6c364227591d14ae0d3a584342aa1dbe8e80e46c37c83e79a5a066398aae2"
+        },
+        {
+          "name": "swr:missing_assets",
+          "value": "tool/fonts/ 的 Hind 和 Barlow；实际启动退出 1"
+        },
+        {
+          "name": "swr:path",
+          "value": "bin/nha-phase5/binaries/SwitchRecomp.bin"
+        }
+      ]
+    },
+    {
+      "type": "application",
+      "bom-ref": "gui-windows",
+      "name": "SwitchRecomp.exe",
+      "version": "v190",
+      "licenses": [
+        {
+          "license": {
+            "id": "AGPL-3.0-only"
+          }
+        }
+      ],
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "a06f1cca8790331bbc3c841266591612dd2e8623c2ca0948c836a159d1cef751"
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:archive_entry",
+          "value": "SwitchRecomp/SwitchRecomp.exe"
+        },
+        {
+          "name": "swr:bytes",
+          "value": "5445492"
+        },
+        {
+          "name": "swr:link_archives",
+          "value": "libSDL2.a,libSDL2_image.a,libSDL2_ttf.a,libadvapi32.a,libcomdlg32.a,libgcc.a,libgdi32.a,libimm32.a,libkernel32.a,libmingw32.a,libmingwex.a,libmsvcrt.a,libole32.a,liboleaut32.a,librpcrt4.a,libsetupapi.a,libshell32.a,libuser32.a,libversion.a,libwinmm.a"
+        },
+        {
+          "name": "swr:link_map_sha256",
+          "value": "716bf9fea1b18309c8d80f71cf83b5993fb42b7d78f901b36479921610542eba"
+        },
+        {
+          "name": "swr:path",
+          "value": "bin/nha-phase5/binaries/SwitchRecomp.exe"
+        },
+        {
+          "name": "swr:pe_imports",
+          "value": "ADVAPI32.dll,comdlg32.dll,GDI32.dll,IMM32.dll,KERNEL32.dll,msvcrt.dll,ole32.dll,OLEAUT32.dll,RPCRT4.dll,SETUPAPI.dll,SHELL32.dll,USER32.dll,VERSION.dll,WINMM.dll"
+        },
+        {
+          "name": "swr:runtime_optional_dlls",
+          "value": "SDL_image 二进制字符串包含 libavif-16.dll、libtiff-5.dll、libwebp-7.dll、libwebpdemux-2.dll，包内无这些文件"
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "bom-ref": "linux-package",
+      "name": "linux-nha-test.tar.gz",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "df2e5dd9d0b8e85320b32076b583d35e0099d2c7f84d5d6ebf7969644e38a8fa"
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:archive_regular_files",
+          "value": "19"
+        },
+        {
+          "name": "swr:bytes",
+          "value": "1569995"
+        },
+        {
+          "name": "swr:disposition",
+          "value": "blocked"
+        },
+        {
+          "name": "swr:path",
+          "value": "bin/nha-phase4/packages-final/linux-nha-test.tar.gz"
+        },
+        {
+          "name": "swr:release_version",
+          "value": "Runtime v190 test"
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "bom-ref": "windows-package",
+      "name": "windows-nha-test.zip",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "feb30a2616841b39e6ceebbe01bd56ed7f78229f1845a5c124982f3b4cff2e09"
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:archive_regular_files",
+          "value": "329"
+        },
+        {
+          "name": "swr:bytes",
+          "value": "4883744"
+        },
+        {
+          "name": "swr:disposition",
+          "value": "blocked"
+        },
+        {
+          "name": "swr:path",
+          "value": "bin/nha-phase4/packages-final/windows-nha-test.zip"
+        },
+        {
+          "name": "swr:release_version",
+          "value": "Runtime v190 test"
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "bom-ref": "historical-packages-final-linux-test.tar.gz",
+      "name": "linux-test.tar.gz",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "264287db6f891c8cf41ac9176b2e0e25e44a41a2760a43b9a7df95c75baa8925"
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:bytes",
+          "value": "1569988"
+        },
+        {
+          "name": "swr:disposition",
+          "value": "excluded"
+        },
+        {
+          "name": "swr:evidence",
+          "value": "历史内部测试包，按 SHA-256 留存，组件图以最终两个包为准"
+        },
+        {
+          "name": "swr:path",
+          "value": "bin/nha-phase4/packages-final/linux-test.tar.gz"
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "bom-ref": "historical-packages-final-linux-verified-test.tar.gz",
+      "name": "linux-verified-test.tar.gz",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "6af5a236a839df1e3245adf0cbd315feb2e9ad58f92c953d3074f5676e539b9b"
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:bytes",
+          "value": "1570002"
+        },
+        {
+          "name": "swr:disposition",
+          "value": "excluded"
+        },
+        {
+          "name": "swr:evidence",
+          "value": "历史内部测试包，按 SHA-256 留存，组件图以最终两个包为准"
+        },
+        {
+          "name": "swr:path",
+          "value": "bin/nha-phase4/packages-final/linux-verified-test.tar.gz"
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "bom-ref": "historical-packages-final-windows-test.zip",
+      "name": "windows-test.zip",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "53247c9e1f4f5872234661dc4f41a25d97b3f0edee7b9a998788a241e689f7ab"
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:bytes",
+          "value": "20677589"
+        },
+        {
+          "name": "swr:disposition",
+          "value": "excluded"
+        },
+        {
+          "name": "swr:evidence",
+          "value": "历史内部测试包，按 SHA-256 留存，组件图以最终两个包为准"
+        },
+        {
+          "name": "swr:path",
+          "value": "bin/nha-phase4/packages-final/windows-test.zip"
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "bom-ref": "historical-packages-final-windows-stripped-test.zip",
+      "name": "windows-stripped-test.zip",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "cd2d4f402f3da20ebe8dd2847704206d81f78f5366d12522fa828df5f7716984"
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:bytes",
+          "value": "4870228"
+        },
+        {
+          "name": "swr:disposition",
+          "value": "excluded"
+        },
+        {
+          "name": "swr:evidence",
+          "value": "历史内部测试包，按 SHA-256 留存，组件图以最终两个包为准"
+        },
+        {
+          "name": "swr:path",
+          "value": "bin/nha-phase4/packages-final/windows-stripped-test.zip"
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "bom-ref": "historical-packages-linux-test.tar.gz",
+      "name": "linux-test.tar.gz",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "d41e2727ea6917fc2c508d0ddb6e8bd0c4750ee43c14c6e87905de1ad422d7c0"
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:bytes",
+          "value": "1568894"
+        },
+        {
+          "name": "swr:disposition",
+          "value": "excluded"
+        },
+        {
+          "name": "swr:evidence",
+          "value": "历史内部测试包，按 SHA-256 留存，组件图以最终两个包为准"
+        },
+        {
+          "name": "swr:path",
+          "value": "bin/nha-phase4/packages/linux-test.tar.gz"
+        }
+      ]
+    },
+    {
+      "type": "file",
+      "bom-ref": "historical-packages-windows-test.zip",
+      "name": "windows-test.zip",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "7512d0d4c3fb5d450612978eec81b9c884006301734e121b86d89038106db029"
+        }
+      ],
+      "properties": [
+        {
+          "name": "swr:bytes",
+          "value": "20677589"
+        },
+        {
+          "name": "swr:disposition",
+          "value": "excluded"
+        },
+        {
+          "name": "swr:evidence",
+          "value": "历史内部测试包，按 SHA-256 留存，组件图以最终两个包为准"
+        },
+        {
+          "name": "swr:path",
+          "value": "bin/nha-phase4/packages/windows-test.zip"
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "phase5",
+      "dependsOn": [
+        "linux-package",
+        "windows-package"
+      ]
+    },
+    {
+      "ref": "project-source",
+      "dependsOn": []
+    },
+    {
+      "ref": "recompiler",
+      "dependsOn": [
+        "project-source"
+      ]
+    },
+    {
+      "ref": "texture2ddecoder",
+      "dependsOn": []
+    },
+    {
+      "ref": "fp16",
+      "dependsOn": []
+    },
+    {
+      "ref": "endianness",
+      "dependsOn": []
+    },
+    {
+      "ref": "barlow",
+      "dependsOn": []
+    },
+    {
+      "ref": "hind",
+      "dependsOn": []
+    },
+    {
+      "ref": "hind-embedded",
+      "dependsOn": []
+    },
+    {
+      "ref": "dr_wav",
+      "dependsOn": []
+    },
+    {
+      "ref": "dr_mp3",
+      "dependsOn": []
+    },
+    {
+      "ref": "stb_vorbis",
+      "dependsOn": []
+    },
+    {
+      "ref": "gcc-linux",
+      "dependsOn": []
+    },
+    {
+      "ref": "glibc-linux",
+      "dependsOn": []
+    },
+    {
+      "ref": "gcc-windows",
+      "dependsOn": []
+    },
+    {
+      "ref": "mingw-crt",
+      "dependsOn": []
+    },
+    {
+      "ref": "winpthreads",
+      "dependsOn": []
+    },
+    {
+      "ref": "x11-host",
+      "dependsOn": []
+    },
+    {
+      "ref": "gl-host",
+      "dependsOn": []
+    },
+    {
+      "ref": "sdl-linux",
+      "dependsOn": [
+        "glibc-linux"
+      ]
+    },
+    {
+      "ref": "image-linux",
+      "dependsOn": [
+        "sdl-linux",
+        "glibc-linux"
+      ]
+    },
+    {
+      "ref": "ttf-linux",
+      "dependsOn": [
+        "sdl-linux",
+        "glibc-linux"
+      ]
+    },
+    {
+      "ref": "sdl-windows",
+      "dependsOn": []
+    },
+    {
+      "ref": "image-windows",
+      "dependsOn": [
+        "sdl-windows"
+      ]
+    },
+    {
+      "ref": "ttf-windows",
+      "dependsOn": [
+        "sdl-windows",
+        "freetype-windows",
+        "harfbuzz-windows"
+      ]
+    },
+    {
+      "ref": "freetype-windows",
+      "dependsOn": []
+    },
+    {
+      "ref": "harfbuzz-windows",
+      "dependsOn": []
+    },
+    {
+      "ref": "runtime-linux-x11",
+      "dependsOn": [
+        "project-source",
+        "gcc-linux",
+        "glibc-linux",
+        "x11-host",
+        "gl-host",
+        "texture2ddecoder",
+        "fp16",
+        "endianness"
+      ]
+    },
+    {
+      "ref": "runtime-linux-headless",
+      "dependsOn": [
+        "project-source",
+        "gcc-linux",
+        "glibc-linux"
+      ]
+    },
+    {
+      "ref": "runtime-win32-gl",
+      "dependsOn": [
+        "project-source",
+        "gcc-windows",
+        "mingw-crt",
+        "winpthreads",
+        "hind-embedded",
+        "texture2ddecoder",
+        "fp16",
+        "endianness"
+      ]
+    },
+    {
+      "ref": "runtime-windows-headless",
+      "dependsOn": [
+        "project-source",
+        "gcc-windows",
+        "mingw-crt",
+        "winpthreads",
+        "hind-embedded"
+      ]
+    },
+    {
+      "ref": "gui-linux",
+      "dependsOn": [
+        "project-source",
+        "dr_wav",
+        "dr_mp3",
+        "stb_vorbis",
+        "gcc-linux",
+        "glibc-linux",
+        "sdl-linux",
+        "image-linux",
+        "ttf-linux"
+      ]
+    },
+    {
+      "ref": "gui-windows",
+      "dependsOn": [
+        "project-source",
+        "dr_wav",
+        "dr_mp3",
+        "stb_vorbis",
+        "gcc-windows",
+        "mingw-crt",
+        "sdl-windows",
+        "image-windows",
+        "ttf-windows",
+        "hind",
+        "barlow"
+      ]
+    },
+    {
+      "ref": "linux-package",
+      "dependsOn": [
+        "runtime-linux-x11",
+        "runtime-linux-headless",
+        "gui-linux",
+        "recompiler",
+        "sdl-linux",
+        "image-linux",
+        "ttf-linux"
+      ]
+    },
+    {
+      "ref": "windows-package",
+      "dependsOn": [
+        "runtime-win32-gl",
+        "runtime-windows-headless",
+        "gui-windows",
+        "recompiler",
+        "project-source"
+      ]
+    },
+    {
+      "ref": "historical-packages-final-linux-test.tar.gz",
+      "dependsOn": []
+    },
+    {
+      "ref": "historical-packages-final-linux-verified-test.tar.gz",
+      "dependsOn": []
+    },
+    {
+      "ref": "historical-packages-final-windows-test.zip",
+      "dependsOn": []
+    },
+    {
+      "ref": "historical-packages-final-windows-stripped-test.zip",
+      "dependsOn": []
+    },
+    {
+      "ref": "historical-packages-linux-test.tar.gz",
+      "dependsOn": []
+    },
+    {
+      "ref": "historical-packages-windows-test.zip",
+      "dependsOn": []
+    }
+  ],
+  "compositions": [
+    {
+      "aggregate": "incomplete",
+      "assemblies": [
+        "linux-package",
+        "windows-package"
+      ]
+    }
+  ]
+}

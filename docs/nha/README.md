@@ -2,6 +2,8 @@
 
 四目标构建、ABI 1 路由矩阵和设备回归见 [Phase 4 集成验证](phase4.md)。
 
+最终测试包的制品清单及发布阻断见 [Phase 5 发布前审计](phase5.md)。
+
 [接口清单](interfaces.json) 固定于 Runtime 源码提交 `d7d26a9`。清单包含 58 个显式 SVC、78 个 IPC 注册名、1,233 个 IPC 命令、65 个 nvdrv IOCTL 分支，以及 IPC 控制、资源析构、Binder 和直接调用等入口，共 1,384 条。接口行为与错误码按条目中的源码或契约定位。仅能定位处理分支的条目带有 `insufficient_evidence`，具体字段和跨平台语义仍需验证。
 
 IPC 名称采用 trace 的完整 `ipc.<family>.<interface>.<command>`。例如 `nfp:user` 与 `nfc:user` 都创建 `IUser`，两者保留独立 ID。由 Runtime 主动归一化的 `time:u`、`time:a`、`time:s` 都进入 `ipc.time.*`，原服务名仍可在注册表核对。动态会话、generic 兼容占位以及同一 ID 下的多个对象后端见 `dynamic_dependencies`。标记为 `legacy_stub` 的静态分支有明确的占位或无动作证据，客体协议的兼容性仍由各自的测试状态表示。

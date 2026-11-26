@@ -3,6 +3,9 @@ SwitchRecomp v190 test - MZ Labs
 This is v190 with a second renderer to try out.
 
 NATIVE HORIZON ADAPTER (EXPERIMENTAL)
+Build runtime release artifacts with --build-runtime --release to report v190.
+The OpenGL/headless release packager includes GUI fonts, licensing notices and a
+source index, and checks the runtime version and optional archive links.
 The Runtime defaults to Legacy routing and continues to load ABI 1 code modules.
 Set SWR_NATIVE_HOS=1 and enable any of SWR_NATIVE_TIME, SWR_NATIVE_FS,
 SWR_NATIVE_THREAD or SWR_NATIVE_SYNC to opt in. Native file access supports

@@ -20,7 +20,7 @@ From the `SwitchRecomp` folder:
 ```sh
 for t in "linux x11 gcc" "win64 win32 x86_64-w64-mingw32-gcc" "linux headless gcc" "win64 headless x86_64-w64-mingw32-gcc"; do
   set -- $t
-  python3 switchrecomp.py --build-runtime --target "$1" --backend "$2" --cc "$3" || exit "$?"
+  python3 switchrecomp.py --build-runtime --release --target "$1" --backend "$2" --cc "$3" || exit "$?"
 done
 sh tool/build_tool.sh SwitchRecomp.exe && sh tool/build_tool_linux.sh SwitchRecomp.bin
 ```
@@ -34,6 +34,9 @@ Pass when:
 
 The runtime prints the version `v190` in the first line of every game log. A build that says anything else
 (`v190-something`) is not a release build.
+For the OpenGL/headless package profile, build with `SWR_NO_SNXVK=1` and keep the GNU ld map for each
+runtime. Supply the reviewed notices and exact source index to `tool/package_release.py` and run
+`python3 tests/test_release.py` to check the packaging rules. See the [Phase 5 audit](docs/nha/phase5.md).
 
 ## Level 1: unit tests
 

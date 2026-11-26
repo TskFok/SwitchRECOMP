@@ -69,6 +69,12 @@ Packaging (what the release has):
 - Linux tar.gz: the Linux package folder (`SwitchRecomp` launcher script + `SwitchRecomp.bin`, `lib/`, `bin/`).
 - AppImage: the Linux package + `AppRun`, built with `mksquashfs -comp zstd` on top of an AppImage runtime.
 
+Use `--build-runtime --release` when building the binaries destined for the v190 package.
+For the audited OpenGL/headless profile, retain each Runtime GNU ld map and assemble the archives
+with `python3 tool/package_release.py`. It includes both GUIs' required fonts, platform license
+notices, and a source index for the corresponding source download. The Linux package profile
+uses host SDL2, SDL2_image, and SDL2_ttf. See the [Phase 5 audit](docs/nha/phase5.md#v190-候选制品复核).
+
 Regression checks (builds, unit tests, homebrew GPU tests, games) are in REGRESSION.md.
 
 ---

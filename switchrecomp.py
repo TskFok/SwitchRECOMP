@@ -258,7 +258,7 @@ def runtime_path(target_win, backend):
                                                            '.exe' if target_win else ''))
 
 
-def build_runtime(cc, out, target_win, backend, say, opt='2'):
+def build_runtime(cc, out, target_win, backend, say, opt='2', *, release=False):
     if is_tcc(cc):
         # bcn, SPIRV-Cross and OpenH264 are C++
         raise SystemExit('TCC cannot build the runtime: build it once with GCC (--build-runtime --cc gcc), '
@@ -293,6 +293,8 @@ def build_runtime(cc, out, target_win, backend, say, opt='2'):
     vp = os.path.join(RT, 'vp9', 'win' if target_win else 'lin')
     vp9 = os.path.isfile(os.path.join(vp, 'libvpx.a')) and backend in ('win32', 'x11', 'headless')
     cmd = [cc] + ([] if target_win else ['-std=gnu17']) + ['-O' + opt, '-w', '-fno-strict-aliasing', '-Wl,-S', '-I', RT, '-I', os.path.join(RT, 'bcn'), '-I', os.path.join(RT, 'spvc'), '-I', os.path.join(RT, 'oh264', 'include'), '-I', os.path.join(RT, 'opus', 'include')] + srcs + ['-o', out]
+    if release:
+        cmd += ['-DSWR_RUNTIME_VERSION="v190"']
     if target_win and backend == 'win32': cmd += ['-DSWR_RECORD_AUDIO']
     if not h264: cmd += ['-DSWR_NO_H264']
     if not opus: cmd += ['-DSWR_NO_OPUS']
@@ -421,8 +423,11 @@ def main():
     ap.add_argument('--interp-only', action='store_true', help='(diagnostics) no recompilation, everything interpreted')
     ap.add_argument('--runtime', help='use an already built runtime (.exe) instead of building it')
     ap.add_argument('--build-runtime', action='store_true', help='build bin/runtime_<target>_<backend> with GCC and exit')
+    ap.add_argument('--release', action='store_true', help='build the runtime with the v190 release version')
     ap.add_argument('-q', '--quiet', action='store_true')
     a = ap.parse_args()
+    if a.release and not a.build_runtime:
+        ap.error('--release requires --build-runtime')
     say = (lambda m: None) if a.quiet else (lambda m: print(m, flush=True))
     target_win = a.target == 'win64' or (a.target == 'auto' and sys.platform.startswith('win'))
     backend = a.backend if a.backend != 'auto' else ('win32' if target_win else 'x11')
@@ -433,7 +438,7 @@ def main():
         os.makedirs(os.path.dirname(out), exist_ok=True)
         check_writable(out)
         say('Compiling the runtime (%s) with %s...' % (backend, os.path.basename(cc)))
-        build_runtime(cc, out, target_win, backend, say, a.O)
+        build_runtime(cc, out, target_win, backend, say, a.O, release=a.release)
         say('Done: %s' % out)
         return
     if not a.input: ap.error('the game folder or .nro file is required')
