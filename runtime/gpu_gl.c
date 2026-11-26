@@ -44,13 +44,17 @@ u32 fmt_bpp_2d(u32 f);
 /* ============================================================ work queue */
 enum { WK_SUBMIT, WK_PRESENT_CPU, WK_PRESENT_ADDR, WK_SHOT, WK_SYNC, WK_DUMP };
 
-typedef struct { int kind; u64* ent; u32 n, syncpt, incs, wait_id, wait_val; u32* px; int w,h; u64 addr; u32 fmt; PCond* done_cv; volatile int* done; char path[256]; u64 result; u64 sub_ns; } Work;
+typedef struct { int kind; u64* ent; u32 n, syncpt, incs, wait_id, wait_val; u32* px; int w,h; u64 addr; u32 fmt; PCond* done_cv; volatile int* done; char path[256]; u64 result; u64 sub_ns; u64 queued_ns; } Work;
 
 #define QN 1024
 static Work q[QN]; static int qh, qt; static PMutex g_ql; static PCond g_qcv, g_qspace;
+static int g_frame_timing_enabled;
 
 static void q_push(Work* w){
-  pm_lock(&g_ql); while(((qh+1)%QN)==qt) pc_wait(&g_qspace,&g_ql,1000000); q[qh]=*w; qh=(qh+1)%QN; pc_signal(&g_qcv); pm_unlock(&g_ql); }
+  pm_lock(&g_ql); while(((qh+1)%QN)==qt) pc_wait(&g_qspace,&g_ql,1000000);
+  if((w->kind==WK_PRESENT_CPU || w->kind==WK_PRESENT_ADDR) &&
+     __atomic_load_n(&g_frame_timing_enabled,__ATOMIC_RELAXED)) w->queued_ns=plat_ns();
+  q[qh]=*w; qh=(qh+1)%QN; pc_signal(&g_qcv); pm_unlock(&g_ql); }
 
 static int q_pop(Work* w, i64 timeout){
   pm_lock(&g_ql); if(qh==qt) pc_wait(&g_qcv,&g_ql,timeout); if(qh==qt){ pm_unlock(&g_ql); return 0; }
@@ -3272,6 +3276,60 @@ static void warm_step(void){
 
 static FILE* g_rf; static u64 g_rf_t0;
 static u64 g_fr_t0, g_fr_max; static int g_fr_slow; static u64 g_fr_shnew;
+
+/* Capture renderer-thread present intervals without adding OpenGL queries or waits. */
+static FILE* g_frame_timing;
+
+static void frame_timing_write_failed(void){
+  __atomic_store_n(&g_frame_timing_enabled,0,__ATOMIC_RELAXED);
+  fclose(g_frame_timing);
+  g_frame_timing=NULL;
+  WARN("gpu: error writing frame_timing.csv, stopping capture\n");
+}
+
+static void frame_timing_open(void){
+  const char* opt=getenv("SWR_FRAME_TIMING");
+  if(!opt || strcmp(opt,"1")) return;
+  g_frame_timing=fopen("frame_timing.csv","w");
+  if(!g_frame_timing){ WARN("gpu: cannot open frame_timing.csv\n"); return; }
+  if(fputs("frame,elapsed_ns,frame_ns,submit_interval_ns,queue_wait_ns,present_work_ns,"
+           "gpu_thread_work_ns,swap_ns,gl_sync_ns,shader_ns,texture_ns,buffer_ns,"
+           "compute_wait_ns,draw_ns,shader_wait_draws\n",g_frame_timing)<0 || fflush(g_frame_timing)){
+    frame_timing_write_failed();
+    return;
+  }
+  __atomic_store_n(&g_frame_timing_enabled,1,__ATOMIC_RELAXED);
+}
+
+static void frame_timing_sample(const Work* work,u64 begin,u64 end,u64 interval){
+  if(!g_frame_timing || !work->queued_ns) return;
+  static u64 capture_start,last_flush,last_queued,last_work,last_gl_sync,last_compute,last_shader_wait;
+  u64 gpu_work=g_gpu_busy+(end-begin);
+  u64 gl_sync=glq_named_sync_ns();
+  if(last_queued && interval){
+    int written=fprintf(g_frame_timing,
+      "%u,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu\n",g_frame,
+      (unsigned long long)(end-capture_start),(unsigned long long)interval,
+      (unsigned long long)(work->queued_ns-last_queued),(unsigned long long)(begin-work->queued_ns),
+      (unsigned long long)(end-begin),(unsigned long long)(gpu_work-last_work),
+      (unsigned long long)g_tm[TM_SWAP],(unsigned long long)(gl_sync-last_gl_sync),
+      (unsigned long long)(g_tm[TM_SH]+g_tm[TM_SHREADY]),(unsigned long long)g_tm[TM_TEX],
+      (unsigned long long)(g_tm[TM_BUF]+g_tm[TM_CB]+g_tm[TM_GB]),
+      (unsigned long long)(st_cs_sync_ns-last_compute),(unsigned long long)g_tm[TM_DRAW],
+      (unsigned long long)(st_compiling-last_shader_wait));
+    if(written<0){ frame_timing_write_failed(); return; }
+    if(end-last_flush>=1000000000ull){
+      if(fflush(g_frame_timing)){ frame_timing_write_failed(); return; }
+      last_flush=end;
+    }
+  } else capture_start=last_flush=end;
+  last_queued=work->queued_ns;
+  last_work=gpu_work;
+  last_gl_sync=gl_sync;
+  last_compute=st_cs_sync_ns;
+  last_shader_wait=st_compiling;
+}
+
 /* ---- dynamic res: move every RT to the new scale with a GPU copy */
 /* UBO with 1/scale for gl_FragCoord math (shaders do uv = pos * 1/native size) */
 static GLuint g_rs_ubo;
@@ -3337,9 +3395,11 @@ static void res_dyn_step(void){
   else rd_up=0; }
 
 /* end of frame: was it slow, and where did the time go */
-static void frame_stats(void){
+static void frame_stats(const Work* work,u64 begin){
   gp_frame_end(); wd_pass(NULL,0);
-  u64 now=plat_ns(); if(!g_fr_t0){ g_fr_t0=now; memset(g_tm,0,sizeof g_tm); g_fr_shnew=st_sh_new; return; }
+  u64 now=plat_ns();
+  frame_timing_sample(work,begin,now,g_fr_t0? now-g_fr_t0 : 0);
+  if(!g_fr_t0){ g_fr_t0=now; memset(g_tm,0,sizeof g_tm); g_fr_shnew=st_sh_new; return; }
   u64 dt=now-g_fr_t0; g_fr_t0=now; if(dt>g_fr_max) g_fr_max=dt;
   if(dt>120000000ull && g_rf && g_fr_slow<300){ g_fr_slow++; u32 pend=__atomic_load_n(&wq_hi.t,__ATOMIC_RELAXED)-__atomic_load_n(&wq_hi.h,__ATOMIC_RELAXED);
     fprintf(g_rf,"   slow frame %.0f ms (GPU thread: shaders %.0f+%.0f, state %.0f, textures %.0f, buffers %.0f, driver %.0f, present %.0f ms) new shaders %llu, queued %u\n",
@@ -3431,6 +3491,7 @@ static void gpu_thread(void* arg){ t_gpu_thread=1;
   LOG("gpu: native 0..1 depth %s, texture views %s\n",p_clip? "yes" : "no",p_tview? "yes" : "no");
   LOG("gpu: texture multi-bind %s, persistent constant ring %s\n",p_bt? "yes" : "no",g_ur_ptr? "yes" : "no");
   warm_load();
+  frame_timing_open();
   g_gl=1; g_gl_ready=1;
   splash_play(1.0);
   for(;;){
@@ -3502,11 +3563,11 @@ static void gpu_thread(void* arg){ t_gpu_thread=1;
           if(!syncpt_wait(w.wait_id,w.wait_val,2000000000)){ static int nl; if(nl<6){ nl++; LOG("gpu: submit fence %u >= %u never came (2 s), running it anyway\n",w.wait_id,w.wait_val); } } }
         gpu_submit_now(w.ent,w.n,w.syncpt); cs_kick_async(); free(w.ent); cs_submit_done(w.syncpt,w.incs); break;
       case WK_PRESENT_CPU: if(g_skip_frame){ free(w.px); g_frame++; g_skip_frame= g_frame%(frame_skip_count()+1); break; }
-        g_present_guest_ns=w.sub_ns; trace_note("PRESENT CPU image %dx%d\n",w.w,w.h); present_cpu(w.px,w.w,w.h); free(w.px); g_frame++; g_skip_frame= frame_skip_count() && g_frame%(frame_skip_count()+1); gpu_evict_step(); frame_stats(); trace_frame(); break;
+        g_present_guest_ns=w.sub_ns; trace_note("PRESENT CPU image %dx%d\n",w.w,w.h); present_cpu(w.px,w.w,w.h); free(w.px); g_frame++; g_skip_frame= frame_skip_count() && g_frame%(frame_skip_count()+1); gpu_evict_step(); frame_stats(&w,t_busy0); trace_frame(); break;
       case WK_PRESENT_ADDR: if(g_skip_frame){ g_frame++; g_skip_frame= frame_skip_count() && g_frame%(frame_skip_count()+1); break; }
         g_present_guest_ns=w.sub_ns;
         if(!present_addr(w.addr,w.w,w.h)){ extern void vi_convert_cpu(u64 a, u32 w, u32 h, u32 pitch, u32 layout, u32 bhl, u32 fmt, u32* out);
-          u32* px=malloc((size_t)w.w*w.h*4); vi_convert_cpu(w.addr,w.w,w.h,w.n,(w.fmt>>8)&15,(w.fmt>>12)&15,w.fmt&0xFF,px); present_cpu(px,w.w,w.h); free(px); } g_frame++; g_skip_frame= frame_skip_count() && g_frame%(frame_skip_count()+1); gpu_evict_step(); frame_stats(); trace_frame(); break;
+          u32* px=malloc((size_t)w.w*w.h*4); vi_convert_cpu(w.addr,w.w,w.h,w.n,(w.fmt>>8)&15,(w.fmt>>12)&15,w.fmt&0xFF,px); present_cpu(px,w.w,w.h); free(px); } g_frame++; g_skip_frame= frame_skip_count() && g_frame%(frame_skip_count()+1); gpu_evict_step(); frame_stats(&w,t_busy0); trace_frame(); break;
       case WK_DUMP: dump_rts(); g_tr_arm=1; break;
       case WK_SHOT: do_screenshot(w.path[0]? w.path : NULL); __atomic_store_n(&g_shot_done,w.n,__ATOMIC_SEQ_CST); break;
     }

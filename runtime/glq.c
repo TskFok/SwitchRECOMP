@@ -89,10 +89,14 @@ void glq_sync(void (*ex)(void*), void* arg){
    report so the expensive ones show up in user logs */
 typedef struct { const char* n; u64 cnt, ns; } SyncStat;
 static SyncStat g_ss[48];
+static __thread u64 t_sync_ns;
+
+u64 glq_named_sync_ns(void){ return t_sync_ns; }
 
 void glq_sync_n(void (*ex)(void*), void* arg, const char* name){
   if(t_glq_direct || !g_active){ ex(arg); return; }
   u64 t0=plat_ns(); g_wait_name=name; glq_sync(ex,arg); u64 dt=plat_ns()-t0;
+  t_sync_ns+=dt;
   for(int i=0;i<48;i++){ if(g_ss[i].n==name || !g_ss[i].n){ g_ss[i].n=name; g_ss[i].cnt++; g_ss[i].ns+=dt; break; } } }
 
 /* "glGetUniformLocation 12x 3.1ms, ..." for the worst ones since the last call, then reset */

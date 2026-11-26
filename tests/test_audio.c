@@ -1,4 +1,4 @@
-#include "audio.h"
+#include "../runtime/audio.c"
 #include <assert.h>
 #include <math.h>
 #include <pthread.h>
@@ -6,7 +6,39 @@ u8* g_mem;int g_verbose=0;
 int logf_(int l,const char* f,...){(void)l;va_list a;va_start(a,f);int n=vfprintf(stderr,f,a);va_end(a);return n<0;}
 void pm_init(PMutex* m){pthread_mutex_init(&m->l,NULL);}void pm_lock(PMutex* m){pthread_mutex_lock(&m->l);}void pm_unlock(PMutex* m){pthread_mutex_unlock(&m->l);}
 typedef struct{PThreadFn fn;void* arg;}TArg;static void* tstart(void* p){TArg t=*(TArg*)p;free(p);t.fn(t.arg);return NULL;}
-int plat_thread(PThreadFn fn,void* arg,size_t stack){(void)stack;pthread_t th;TArg* t=malloc(sizeof *t);t->fn=fn;t->arg=arg;if(pthread_create(&th,NULL,tstart,t)){free(t);return -1;}pthread_detach(th);return 0;}
+static int (*sdl_queue_audio)(u32 device_id, const void* data, u32 size);
+static int submitted_pcm;
+
+static int observe_audio_queue(u32 device_id, const void* data, u32 size){
+  int result = sdl_queue_audio(device_id, data, size);
+  if(result != 0) return result;
+  const i16* samples = data;
+  for(size_t i = 0; i + 1 < size / sizeof(*samples); i += 2){
+    if(samples[i] > 0 && samples[i + 1] < 0){
+      __atomic_store_n(&submitted_pcm, 1, __ATOMIC_RELAXED);
+      break;
+    }
+  }
+  return result;
+}
+
+int plat_thread(PThreadFn fn,void* arg,size_t stack){
+  (void)stack;
+  pthread_t th;
+  TArg* t=malloc(sizeof *t);
+  if(!t) return -1;
+  t->fn=fn;
+  t->arg=arg;
+  /* Observe successful SDL writes before the worker can queue its first packet. */
+  sdl_queue_audio=sdl.queue;
+  sdl.queue=observe_audio_queue;
+  if(pthread_create(&th,NULL,tstart,t)){
+    free(t);
+    return -1;
+  }
+  pthread_detach(th);
+  return 0;
+}
 volatile int g_quit;u64 plat_ns(void){struct timespec ts;clock_gettime(CLOCK_MONOTONIC,&ts);return (u64)ts.tv_sec*1000000000ull+(u64)ts.tv_nsec;}
 void plat_sleep_ns(i64 ns){struct timespec ts={ns/1000000000,ns%1000000000};nanosleep(&ts,NULL);}
 void mem_query(u64 a,MemBlock* b){memset(b,0,sizeof *b);if(a<65536){b->size=65536;b->perm=PERM_R;}}
@@ -17,6 +49,37 @@ static void begin(unsigned format,unsigned ch,unsigned count){swr_audio_destroy(
  v[9]=1;v[0xb]=(u8)format;w32(v+0xc,48000);w32(v+0x18,ch);wf(v+0x1c,1);wf(v+0x20,1);w64(v+0x60,0x1000);w64(v+0x68,count*ch*(format==6?1:format==5?4:2));w32(v+0x74,count);}
 static void run(void){swr_audio_mix(&o,v,1,sizeof v,NULL,0,NULL,0,NULL,0,st,out);}
 static void near(float x,float y){assert(isfinite(x));assert(fabsf(x-y)<.0001f);}
+
+static int test_host_output(void){
+  swr_audio_init();
+  if(!sdl_lib){
+    puts("SKIP host output submission (SDL2 library unavailable)");
+    return 0;
+  }
+  if(!host_ready || !__atomic_load_n(&worker_running, __ATOMIC_ACQUIRE)){
+    fputs("FAIL host output submission (SDL device or audio worker failed to start)\n", stderr);
+    return 1;
+  }
+
+  /* The worker also queues silence. Use opposite channel signs to identify the submitted PCM. */
+  float pcm[240 * 2];
+  for(unsigned i = 0; i < 240; i++){
+    pcm[i * 2] = 0.25f;
+    pcm[i * 2 + 1] = -0.25f;
+  }
+  swr_audio_submit_at(pcm, 240, 0);
+  u64 deadline = plat_ns() + 2000000000ull;
+  while(!__atomic_load_n(&submitted_pcm, __ATOMIC_RELAXED)){
+    if(plat_ns() >= deadline){
+      fputs("FAIL host output submission (SDL did not accept the submitted PCM)\n", stderr);
+      return 1;
+    }
+    plat_sleep_ns(1000000);
+  }
+  puts("PASS host output submission (SDL dummy device)");
+  return 0;
+}
+
 int main(void){g_mem=calloc(1,65536);assert(g_mem);
  begin(2,1,240);for(int i=0;i<240;i++)((i16*)(g_mem+0x1000))[i]=8192;run();near(out[0],.25f*.70710678f);near(out[1],out[0]);assert(played(st)==240&&consumed(st)==1);
  run();assert(consumed(st)==1&&played(st)==240);near(out[0],0);puts("PASS PCM16 mono, gain, completion and duplicate-descriptor protection");
@@ -56,5 +119,5 @@ int main(void){g_mem=calloc(1,65536);assert(g_mem);
  assert(swr_audio_read_pcm16(0x1000,240,6,1,out));near(out[0],.25f*.70710678f);near(out[1],out[0]);
  assert(!swr_audio_read_pcm16(65530,240,6,1,out));assert(!swr_audio_read_pcm16(0x1000,240,7,1,out));
  puts("PASS audout PCM16 stereo, surround center, volume and memory bounds");
- swr_audio_init();swr_audio_submit_at(out,240,0);puts("PASS host output submission (SDL dummy device)");
- swr_audio_destroy(&o);free(g_mem);return 0;}
+ int result=test_host_output();
+ swr_audio_destroy(&o);free(g_mem);return result;}

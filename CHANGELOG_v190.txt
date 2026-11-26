@@ -77,9 +77,11 @@ AUDIO
 Games have sound now. audren mixes PCM and DSP-ADPCM voices, audout streams PCM16 (Celeste, Brawlhalla),
 5.1 gets mixed down to stereo, and the output goes through waveOut on Windows and SDL2 on Linux.
 F7 records the sound to a .wav next to the .mp4, on the same clock as the video.
+The audio output test now checks that SDL accepts the submitted PCM and reports a skip if SDL2 cannot be loaded.
 Some effects, biquad filters and surround virtualization aren't done yet.
 
 GRAPHICS
+Set SWR_FRAME_TIMING=1 to capture per-frame OpenGL timings for percentile and slow-frame analysis.
 1 pixel high/wide render targets stay at native size (the Odyssey table artifacts), scale is per render target.
 Clear rect, scissor and viewport clip flags are separate like on hardware.
 Render enable modes and render override, conditional clears included.

@@ -133,6 +133,7 @@ Regression checks (builds, unit tests, homebrew GPU tests, games) are in REGRESS
 | `<Game>.log` | game folder | The first lines (runtime version, GPU, driver checks). `warning: 6 s without a new image` blocks with the GPU thread, GL thread, compile thread and GPU progress (which pass the GPU didn't finish, with its shaders). `gpu:` lines about assembled textures, depth copies, failed shaders |
 | `threads.txt` | game folder | Written every 15 s. Every guest thread's state, plus the GPU/GL/compile thread lines and GPU progress. A stuck game thread waiting on a mutex/condvar/event points to the blocked subsystem |
 | `performance.txt` | game folder | Every 5 s: FPS, CPU, GPU thread breakdown, GPU time of one frame per render target / compute shader, blocking GL calls. Shows where frame time goes |
+| `frame_timing.csv` | game folder, with `SWR_FRAME_TIMING=1` | Per-frame OpenGL timing for percentile analysis and slow-frame comparisons |
 | `captures/traces/N/` | game folder, after F5 | One frame, fully listed (section 5) |
 | `captures/rt_*.ppm`, `screenshot_*.ppm` | after F5 | The render targets and the presented image |
 
@@ -145,6 +146,32 @@ Environment switches (`SWR_*`, set before starting the game) turn individual fix
 ones used most: `SWR_NO_IMG_LEVEL`, `SWR_IMG_LEVEL_2D_ONLY`, `SWR_NO_CUBE_MIPGEN`, `SWR_NO_UBO_RING`, `SWR_NO_GLQ`,
 `SWR_SYNC_SHADERS`, `SWR_NO_GPU_PROF`, `SWR_NO_GPU_WATCH`, `SWR_LAYDBG`, `SWR_RTDBG`, `SWR_DUMP_SHADERS`,
 `SWR_CS_SYNC`. `grep -n 'getenv("SWR_' runtime/*.c` lists all of them with the code they change.
+
+### Locate slow OpenGL frames
+
+Run the same scene with the same resolution, frame cap and shader cache state for each capture. Enable
+`SWR_FRAME_TIMING=1` before launching. In PowerShell, set it with `$env:SWR_FRAME_TIMING = '1'`.
+Each enabled run starts a fresh `frame_timing.csv` in the game folder. Copy the CSV before taking the next capture.
+
+```sh
+SWR_FRAME_TIMING=1 ./MyGame
+python3 /path/to/SwitchRecomp/tool/frame_timing.py frame_timing.csv --skip-seconds 2 --fps 60
+```
+
+The analyzer reports nearest-rank P50, P95 and P99, the number of frames over the selected budget, and the
+slowest frames with their timing breakdown. Use `--top` to change the number of slow frames shown.
+The CSV starts at the first processed guest presentation and contains one timed interval per subsequent
+processed presentation. It uses the host monotonic clock, including when the guest clock runs at a different rate.
+
+- `frame_ns` measures the interval between completed presentation work on the renderer thread. The GL queue can
+  run asynchronously. Compare `submit_interval_ns` for gaps in incoming presentations and `queue_wait_ns` for
+  work that was already queued and waiting for the renderer thread.
+- `present_work_ns` covers processing the presentation request, including swap calls and frame bookkeeping.
+  `gpu_thread_work_ns` covers time spent processing queued GPU work during the interval. `swap_ns` and
+  `gl_sync_ns` report wall time in swap calls and named synchronous GL queue calls. These timings overlap.
+- Compare shader work, `shader_wait_draws`, texture handling and compute readback waits on the same slow frames.
+  Correlate those frames with `performance.txt` and an F5 capture to investigate specific rendering passes.
+  The CSV measures CPU-side wall times. `performance.txt` also reports periodically sampled GL timers.
 
 ---
 

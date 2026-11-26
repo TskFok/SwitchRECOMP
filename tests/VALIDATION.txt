@@ -45,6 +45,9 @@ PASS audout PCM16 stereo, surround center, volume and memory bounds
 PASS host output submission (SDL dummy device)
 PASS: 48kHz timestamps, 60fps/slow guest-clock alignment, jitter snapping, preserved gaps and PCM clipping
 
+If the SDL2 library cannot be loaded, the host output check reports
+SKIP host output submission (SDL2 library unavailable)
+
 Additional tests run outside the package:
 - Direct audout 1024-frame buffer boundaries, release tags and stop/start.
 - Actual renderer: partial/empty clear, bounds intersection, conditional false, overrides.

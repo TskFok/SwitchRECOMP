@@ -44,8 +44,10 @@ runtime. Supply the reviewed notices and exact source index to `tool/package_rel
 sh tests/run_audio.sh
 ```
 
-This builds `tests/test_audio.c` and `tests/test_record_time.c` with AddressSanitizer and UndefinedBehaviorSanitizer
-and runs them with SDL's dummy audio device. Pass when every line says `PASS` and the sanitizers report nothing.
+This builds `tests/test_audio.c` and `tests/test_record_time.c` with AddressSanitizer and UndefinedBehaviorSanitizer.
+The host output check uses SDL2's dummy audio device and passes after SDL accepts the submitted PCM.
+If the SDL2 library cannot be loaded, the host output check reports `SKIP` while the mixer and clock checks still run.
+Full Level 1 validation requires every check to report `PASS` and no sanitizer diagnostics.
 `tests/VALIDATION.txt` has the expected output. Run it after any change to `runtime/audio.c`, `audio_*.h`,
 `rec_*.c/h` or `rec_audio_time.h`. Otherwise it's optional.
 
